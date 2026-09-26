@@ -1,0 +1,5 @@
+dev/capture_out/
+.research_sessions/
+__pycache__/
+*.pyc
+.pytest_cache/
