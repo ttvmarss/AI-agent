@@ -1393,4 +1393,65 @@ RTX 3050 variants: [HotHardware](https://hothardware.com/news/nvidia-launches-6g
   when only one vendor family is available.
 * **Not built:** voice, vision, engineering lab (CAD, simulation), proactive engine, multi-device, learned router.
 
-*End of Revision Zero (with addenda 38 to 41). Failures get logged, not hidden.*
+## 42. Status addendum — PRAXIS-2: use Claude less, never get stuck, a command center (2026-10-02)
+
+**Requirement (from the owner):** when Claude's usage is spent, reroute to other capable AIs, and in general use Claude *less* so the
+subscription lasts longer; research the best free and local options and add them without disturbing what already works; and the UI must
+not look like a plain toolkit window.
+
+**42.1 Research method and the lesson from it.** Every claim below was read from a vendor page or, where marked *(community)*, from a
+community-maintained list on 2026-10-02. The most useful finding was negative: three things I would have built on **no longer exist**:
+the free Google-login tier of Gemini CLI (ended 2026-06-18), Qwen Code's free OAuth tier (2026-04-15) and GitHub Models' free API
+(retired 2026-07-30). They are recorded in `free_tiers.DISCONTINUED` so nobody re-discovers them the hard way. **Rule: verify a free
+tier exists before designing around it.**
+
+**42.2 Free cloud tiers (`praxis/free_tiers.py`, `praxis/openai_compat.py`).** One generic OpenAI-compatible adapter (Ollama Cloud reuses the Ollama adapter with a key) plus a data table
+(`Preset`: base URL, key variable, models, limits, privacy class, caveat, signup URL, **source URL and date read**). Groq, Cerebras and
+Ollama Cloud are *trusted*; Gemini, Mistral, NVIDIA NIM and OpenRouter `:free` are *open*. Every tier needs a free API key; there is no
+free tier that works without one. The adapter paces itself to the tier's requests/minute (and returns a `RateLimited` instead of
+sleeping past 25 s), refuses a prompt over the tier's token cap before sending it, maps 429/402 to a rest period (the provider's own
+`Retry-After`, else a daily-quota guess), 404 and "model not found" to a 6-hour bench (`ModelUnavailable`), 401/403 to an
+authentication message, and scrubs the key from any error text. Keys live in `~/.praxis/secrets.json` (created 0600) or environment
+variables, never in the event log or the workspace.
+
+**42.3 Data use is a routing constraint, not a footnote.** Free tiers are free because the vendor may keep, read or train on the
+prompt. Providers carry a privacy class (`local` < `cloud`/trusted < `open`; an unknown label is treated as the *least* trusted) and every goal
+carries a data class (`private` = local only, `project` = + trusted, `open` = + open tiers); an ineligible provider is filtered out
+before ranking. Independently, the router refuses to send any prompt that matches a secret pattern (private keys, cloud and API
+tokens, JWTs, password assignments) to an open tier, and logs `model.skipped` with the reason.
+
+**42.4 Frugal routing (`router.py`, `usage.py`, `executive.py`).** Strategy `frugal` orders candidates by cost class (local, free cloud,
+subscription), then tier small to large, so Claude is the *last* rung. Measured scores demote a model that is below `min_quality` or
+more than `slack` under the best measured one. `UsageTracker` (a global append-only file, so all workspaces share the picture) counts
+calls, estimated cost and tokens per model in 5 h / 24 h / 7 d windows against optional `[budgets]`; a free tier's documented daily
+limit becomes its default budget with 10 % headroom; a model whose budget is spent goes to the **back** of the line (a last resort,
+never a hard block). **Escalation:** if a goal's checks fail on the work itself (not on a Guard denial or a budget), the workspace is rolled back and a stronger model plans *from
+scratch*: nothing observed by the weaker attempt is carried over, so untrusted content cannot steer the retry; at most 2 escalations,
+never to a model that was already tried.
+
+**42.5 The command center (`praxis/desktop/qt/`, PySide6; Tk remains the fallback).** The window is still only a projection of the
+event log plus the router's state (design law 3). The core's colour is PRAXIS's state; its ring is steps done / total; one orbiting
+dot per provider family encodes cost class (colour), budget pressure (arc), an in-flight call (beam, from the new `model.try` event),
+a rest after a rate limit (dim with a clock) and a data-class block (hollow). The Fuel page shows the exact failover ladder
+`Router.eligible()` would use right now. The DATA and FRUGALITY header switches write straight into the controller and router, and are
+re-synchronised from the router when a stack loads, so the control always shows what will run. The Qt package imports nothing from Tk
+(a Qt-only install has no `tkinter`); the approval wording lives in a toolkit-free module so both shells say the same thing.
+
+**42.6 Evidence.** 357 tests in the suite. Full run on Python 3.11 with PySide6 6.11: 357 run, 341 execute and 16 skip (the Tk window tests, which need `tkinter`); the Tk window tests (with the controller and view tests) run separately on Python 3.12 under a virtual display: 49 pass. Of the 357, 24 drive the **real** Qt window offscreen with the real controller: run to VERIFIED, the core lighting the provider being called *right now*, approval dialogs answered from inside the modal loop (exact action shown, Deny focused and default, Esc and close refuse, one dialog per request), STOP restoring the workspace, the `private` setting keeping a cloud model from ever seeing the goal, `frugal` serving a goal from the local model with **zero** Claude calls, the failover ladder in frugal order, and a key added through the dialog making the provider appear in the real `build_stack`. Free-tier adapters are tested against local servers that return the documented error shapes. Screenshots of every page were reviewed at 1360x860 and at the 1100x760 minimum. Mutation (sabotage) results for this phase are appended below when the run completes.
+
+**42.7 Defects found by this phase's own tests (kept in the failure log style).**
+* *Key stored under the wrong name* (UI): the window's "Add key" saved under the environment-variable name while config and the CLI
+  look up the provider id, so a key added in the window would never have been found. My first test asserted with the same wrong name and
+  passed. Replaced by an end-to-end test through the **real** `build_stack`; verified that it fails on the old code.
+* *Window minimum width* (UI): the header and the Models page together forced a 1263 px minimum against a 1100 px window minimum
+  (a long Windows path alone would have widened the window). Fixed with an eliding label, wrapping captions and a test over every page.
+* *Overlapping hero and plan graph* (UI): the layout's minimum height (938 px) exceeded the window (860 px). Fixed and tested by
+  asserting the geometry at the minimum window size.
+* *Stale cards* (UI): refreshed Fuel cards were removed with `deleteLater` alone and stayed painted until the event loop turned.
+
+**42.8 Not proven here.** The free tiers themselves (no keys: fake servers returning the documented error shapes only); the Qt window on
+Windows (offscreen on Linux, screenshots reviewed); the local-model additions' speed and quality (catalog quality ordering uses
+third-party LiveCodeBench figures where available, labelled as secondary evidence, and is replaced by `praxis bench --all-ollama`);
+*(community)* limits for NVIDIA NIM and OpenRouter. A free tier's numbers can change at any time: a provider's 429 always wins.
+
+*End of Revision Zero (with addenda 38 to 42). Failures get logged, not hidden.*

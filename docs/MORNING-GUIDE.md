@@ -9,7 +9,13 @@ On GitHub, open the repository `ttvmarss/ai-agent`, switch to the branch **`clau
 
 ## 2. Python (the only hard requirement)
 
-Install **Python 3.11 or newer** from <https://www.python.org/downloads/> and **tick "Add python.exe to PATH"** (the python.org installer includes Tk, which the window needs). PRAXIS itself has **zero** pip dependencies.
+Install **Python 3.11 or newer** from <https://www.python.org/downloads/> and **tick "Add python.exe to PATH"**. The PRAXIS kernel has **zero** pip dependencies. For the full **command-center window** run one extra command (about 150 MB, installs for your user only):
+
+```
+py -3 -m pip install --user PySide6-Essentials
+```
+
+Without it PRAXIS still works, in a plainer Tk window that python.org's installer includes. (The installer script below offers this for you.)
 
 Fastest path, from the folder you unzipped:
 
@@ -17,7 +23,7 @@ Fastest path, from the folder you unzipped:
 powershell -ExecutionPolicy Bypass -File windows\Install-PRAXIS.ps1
 ```
 
-It checks everything below, offers to install Python, creates a **PRAXIS** shortcut on your Desktop, and runs `praxis doctor`. Or just double-click `windows\PRAXIS.bat`.
+It checks everything below, offers to install Python and the window library, creates a **PRAXIS** shortcut on your Desktop, and runs `praxis doctor`. Or just double-click `windows\PRAXIS.bat`.
 
 ## 3. Sign in to the tools you have (each is optional; PRAXIS uses whatever it finds)
 
@@ -62,11 +68,37 @@ Recommended Ollama settings for a small-VRAM card (from Ollama's FAQ). Set as Wi
 
 Copy `praxis.toml.example` to **`%USERPROFILE%\.praxis\praxis.toml`**. This is the only place provider hosts, sandbox, privacy and limits can be set. A `praxis.toml` inside a project folder is deliberately **untrusted** (a downloaded repo could ship one that points your "local" model at someone else's server), so it may only set `[hardware]`, `[role_tiers]` and `[roles]`.
 
+## 4b. Free AIs: keep working when Claude runs out, and use Claude less
+
+PRAXIS can route to free cloud tiers and to local models, so a spent Claude window does not stop you and routine work does not burn it.
+**Every free tier needs a free API key** (sign-up is on each vendor's site; the **Fuel** page has a *Get a free key* and *Add key...* button per tier, or run `python -m praxis keys set groq`).
+Keys are stored only in `%USERPROFILE%\.praxis\secrets.json`, never in the event log, the workspace, or any error message.
+
+| Tier | Free limit (read 2026-10-02) | What it does with your prompts | Class |
+|---|---|---|---|
+| **Groq** | ~30 requests/min, ~1,000/day, 8K tokens/min (so PRAXIS keeps prompts small) | documented: no training on API data | trusted |
+| **Cerebras** | 5 requests/min, 1M tokens/day | documented: prompts and outputs not retained (no training policy stated) | trusted |
+| **Ollama Cloud** | starter credits, 1 request at a time; limits unpublished | "we do not use them to train models" | trusted |
+| **Google Gemini API** | free tier, ~15 requests/min (varies by model) | **may be used to improve Google products; humans may read it** | open |
+| **Mistral (Experiment)** | ~1B tokens/month | **free-tier conversations are training data unless you opt out** | open |
+| **NVIDIA NIM (trial)** | ~40 requests/min *(community figure)* | trial use only: do not submit confidential data | open |
+| **OpenRouter `:free` models** | 20 requests/min, 50/day *(community figure)* | **free providers may log prompts for training** | open |
+
+`python -m praxis free` prints the same table with a source link for every number. **Limits change; a 429 from the provider always overrides these figures.**
+Paths I checked and **did not build on because they no longer exist**: Gemini CLI's free Google-login tier (ended 2026-06-18), Qwen Code's free OAuth (ended 2026-04-15), GitHub Models' free API (retired 2026-07-30).
+
+**Two switches in the window's header control all of this:**
+
+* **DATA** says what a goal may touch. **PRIVATE** = local models only, nothing leaves the PC. **PROJECT** (default) = local + trusted cloud (Claude, ChatGPT, Groq, Cerebras...). **OPEN** = also the free tiers that may train on prompts. Even at OPEN, a prompt that contains something shaped like a password, API key or private key is never sent to an open tier.
+* **FRUGALITY** says how to spend. **QUALITY** = best model regardless of cost. **BALANCED** = best first, and once benchmarked the cheapest that is as good. **FRUGAL** = local model first, then free tiers, then Claude from small to large; if a cheaper model's work **fails verification**, PRAXIS restores the workspace and retries with the next stronger one (max 2 escalations). This is how Claude gets used less.
+
+When a provider says "limit reached", it rests until the time the provider states (Retry-After or the reset text), and the next one in the ladder takes over. The **Fuel** page shows the ladder, each model's usage in the last 5 hours, 24 hours and 7 days, and the budgets you set under `[budgets]` in your config.
+
 ## 5. First launch
 
-Double-click the **PRAXIS** shortcut. The window opens on **Mission**:
+Double-click the **PRAXIS** shortcut. The window opens on **Mission**. The glowing core is PRAXIS itself and everything on it is real state: its colour is what PRAXIS is doing, the ring is plan progress, and the orbiting dots are your AIs (green = on your PC, cyan = free cloud, violet = subscription; the arc around a dot is how much of its allowance is spent; a beam means a call to it is in flight right now; a clock means it is resting after a limit; hollow means this goal's DATA setting forbids it). Hover a dot for details.
 
-1. **Models → Download** the recommended models if you have not yet. **System** shows each provider, its measured score and cost, and the sandbox state.
+1. **Fuel**: add a free key or two (Groq and Cerebras are trusted tiers). **Models → Download** the recommended local models. **System** shows each provider, its measured score and cost, and the sandbox state.
 2. Run **`python -m praxis bench --max-cost 3`** (or the benchmark button on Models). This sends test tasks to every available model and writes measured quality, speed and cost to the registry. After that the router picks **the cheapest model that is as good as the best**. Heads-up: this uses real subscription usage; the `--max-cost` cap stops new providers once the estimate passes it.
 3. Try a safe first goal on a scratch folder (**Open folder…** → make a new empty folder):
    * *"Create hello.txt containing exactly: Hello, Stark"*
@@ -85,11 +117,12 @@ Double-click the **PRAXIS** shortcut. The window opens on **Mission**:
 
 ## 7. What is verified, and what is not
 
-**Verified in the build environment (Linux):** 258 automated tests, all green on Python 3.11 and 3.12; dozens of deliberate sabotage checks on the security-critical code were caught (every test gap they exposed was fixed and re-checked); real **Claude** subscription runs through PRAXIS: 30/30 capability tasks (18 tuned + 12 held-out), 12 trap runs with 0 attacks, 0 false "done" claims (one earlier held-out run, 1 of 15, failed once for an unrecorded reason and did not reproduce in 4 reruns); the desktop window was launched, driven and screenshotted under a virtual display.
+**Verified in the build environment (Linux):** 357 automated tests, all green (the full suite on Python 3.11; the Tk window tests on 3.12 under a virtual display; 24 of them drive the real command-center window offscreen, including the real approval dialogs); dozens of deliberate sabotage checks on the security-critical code were caught (every test gap they exposed was fixed and re-checked); real **Claude** subscription runs through PRAXIS: 30/30 capability tasks (18 tuned + 12 held-out), 12 trap runs with 0 attacks, 0 false "done" claims (one earlier held-out run, 1 of 15, failed once for an unrecorded reason and did not reproduce in 4 reruns); the desktop window was launched, driven and screenshotted under a virtual display.
 
 **NOT verified, because it could not be run where this was built. Expect to find bugs here, and please tell me what breaks:**
 
-* The window **on Windows itself** (layout/DPI/fonts), the `.bat` and `.ps1` launchers (no PowerShell available), and Docker as the Windows sandbox.
+* The window **on Windows itself** (layout/DPI/fonts; I verified it offscreen on Linux and reviewed screenshots), the `.bat` and `.ps1` launchers (no PowerShell available), and Docker as the Windows sandbox.
+* **The free tiers live.** I had no keys, so each adapter is tested against local fake servers that return the real error shapes (429 with Retry-After, 402, 404 model-gone, 401, 413, daily-quota text). That proves PRAXIS's behavior, not each vendor's. The limit figures are from vendor docs and community lists read on 2026-10-02; `praxis free` shows the source of each.
 * **Codex, Droid, Devin and Ollama live.** They are tested against their *documented* interfaces with recording fake programs and local servers, which proves how PRAXIS calls them but not how the vendors behave today. `python -m praxis doctor --ping` and `bench` are how you find out. Droid's JSON output format is not documented in detail (the parser is defensive).
 * The **speed numbers** for your GPU are estimates until you run `bench --all-ollama`.
 
@@ -97,7 +130,10 @@ Double-click the **PRAXIS** shortcut. The window opens on **Mission**:
 
 | Symptom | Do this |
 |---|---|
-| Window will not open | `python -m praxis.desktop` in a terminal shows the error. "Needs Tk" → reinstall Python from python.org |
+| Window will not open | `python -m praxis.desktop` in a terminal shows the error. Plain-looking window? `py -3 -m pip install --user PySide6-Essentials` for the full one. `--tk` forces the plain one |
+| A free tier says NOT SET UP | it has no key yet: Fuel → *Add key...* (or `python -m praxis keys set <name>`) |
+| The core is hollow on a model | the DATA switch forbids it for this goal (e.g. PRIVATE blocks every cloud model) |
+| Claude is always used first | set FRUGALITY to FRUGAL, and add free keys / pull a local model so there is something cheaper to try first |
 | A provider shows `SKIPPED` | `python -m praxis doctor` prints the reason (not installed / not logged in / Ollama not running) |
 | Everything asks for approval | No proven sandbox: install Docker Desktop and run `docker pull python:3.11-slim`, then System → *Re-run sandbox self-attack* |
 | Local model is slow | System/Models show measured tok/s; lower `num_ctx` in your user `praxis.toml`, set the Ollama variables above, or pick the 8B helper |
