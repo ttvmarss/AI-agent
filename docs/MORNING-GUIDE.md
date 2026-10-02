@@ -96,16 +96,16 @@ When a provider says "limit reached", it rests until the time the provider state
 
 ## 5. First launch
 
-![The core in six states](media/core-states.jpg)
+![The Loom in six states](media/core-states.jpg)
 
-Double-click the **PRAXIS** shortcut. The window opens on **Mission**, and the first thing you see is PRAXIS itself: a **living sphere of about 3,000 glowing particles** that assembles itself as the app boots. Everything about it is real state, not decoration:
+Double-click the **PRAXIS** shortcut. The window opens on **Mission**, and the first thing you see is PRAXIS itself, **The Loom**: a galaxy of about 2,500 glowing particles that assembles itself as the app boots, with three tilted rings around it. It is not decoration. Everything is real state:
 
-* **Colour and motion = what PRAXIS is doing.** Blue-violet-to-pink and slowly turning when idle; cyan, faster, with a scan beam while it works; amber and contracted when it **needs you**; green with a shockwave when a goal is **VERIFIED**; red when it fails; it collapses inward when you hit **STOP**.
-* **A stream of particles flows from the sphere to the AI being called right now**, and that AI glows.
-* **The ring around it fills as the plan's steps are verified.**
-* **Every real event sends a ripple through the sphere**, and the latest one is typed out in the caption box under it.
-* **Your AIs flank the sphere**: free and local on the left, subscriptions on the right. The arc on each is how much of its allowance is spent, a clock hand means it is resting after a limit, hollow means this goal's DATA setting forbids it. Hover one for details.
-* Move the mouse and the sphere leans toward it; click it and it answers. If your machine is slow it quietly drops to fewer particles (never back up, so it cannot flicker); set the environment variable `PRAXIS_REDUCE_MOTION=1` for a calmer, lower-power version.
+* **The three rings are the kernel's real pipeline.** **PLAN** (outer): a comet circles it while PRAXIS plans, then it lights up. **ACT** (middle): one arc per real step of the plan, coloured by that step's state (dim = waiting its turn, cyan with a comet = running now, amber = needs you, green = verified, red = failed). **VERIFY** (inner): one arc per real check; when the goal verifies, it **seals into one closed green ring**. The small legend under the title shows the same numbers: `PLAN ready  ACT 2/5  VERIFY sealed`.
+* **The arms flow inward while PRAXIS works** (it is taking your goal in), **hold still when it needs you**, and **burst outward on VERIFIED** (it is giving something back). The colour is the state: blue-violet-pink idle, cyan working, amber needs you, green verified, red failed; it collapses on **STOP**.
+* **Every real event flares the bright seed in the middle and sends a ripple through the galaxy**, and the latest one is typed out in the caption box under it.
+* **A stream of particles flows to the AI being called right now**, and that AI glows.
+* **Your AIs flank it**: free and local on the left, subscriptions on the right. The arc on each is how much of its allowance is spent, a clock hand means it is resting after a limit, hollow means this goal's DATA setting forbids it. Hover one for details.
+* Move the mouse and the whole galaxy tilts toward it; click it and it answers. On a slow machine it quietly drops to fewer particles (never back up, so it cannot flicker); set `PRAXIS_REDUCE_MOTION=1` for a calmer, lower-power version.
 
 1. **Fuel**: add a free key or two (Groq and Cerebras are trusted tiers). **Models → Download** the recommended local models. **System** shows each provider, its measured score and cost, and the sandbox state.
 2. Run **`python -m praxis bench --max-cost 3`** (or the benchmark button on Models). This sends test tasks to every available model and writes measured quality, speed and cost to the registry. After that the router picks **the cheapest model that is as good as the best**. Heads-up: this uses real subscription usage; the `--max-cost` cap stops new providers once the estimate passes it.

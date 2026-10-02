@@ -9,9 +9,9 @@ Claude less, with a native desktop command center. The kernel is pure Python 3.1
 **Start here: [`docs/MORNING-GUIDE.md`](docs/MORNING-GUIDE.md)** (Windows setup in ~20 minutes).
 Design: [`docs/ARCHITECTURE-REV0.md`](docs/ARCHITECTURE-REV0.md).
 
-![The PRAXIS core in six states: booting, planning with a stream to the AI being called, needs you, verified, failed, stopping](docs/media/core-states.jpg)
+![The PRAXIS core (The Loom) in six states: assembling, planning with a stream to the AI being called, acting, needs you, verified with the VERIFY ring sealed, failed](docs/media/core-states.jpg)
 
-*The core, rendered by the real widget: every colour, ring and stream is real state (see the morning guide).*
+*The core, rendered by the real widget: every colour, arc and stream is real state (see the morning guide).*
 
 ## What it does
 
@@ -35,13 +35,15 @@ goal -> recall (memory) -> plan (model A) -> observe files (labeled UNTRUSTED) -
   documented data terms and the source of its limits (`python -m praxis free`).
 * **Hardware-aware local models**: reads your real VRAM/RAM, models speed with bandwidth physics (MoE vs dense), then
   *measures* tokens/s and quality. Dated, sourced catalog of Ollama models.
-* **Desktop command center** (PySide6): a living sphere of ~3,000 particles whose colour, speed, scan beam, shockwave and ring are
-  real state (idle, working, needs you, verified, failed, stopping; plan progress), a particle stream to the provider being called
-  right now, a ripple for every real event, and a typed caption of the latest one; your AIs flank it with budget arcs, rest clocks
-  and data-class blocks; the plan as a dependency graph; **Fuel** page with the failover ladder and usage per model; DATA and
-  FRUGALITY switches in the header; timeline with "why"; models (download + benchmark); live CPU/RAM/GPU/VRAM; approval dialogs
-  show the exact action and default to Deny; **STOP** kills in-flight calls and restores the workspace. It lowers its own detail
-  on slow machines and honours `PRAXIS_REDUCE_MOTION=1`.
+* **Desktop command center** (PySide6): the core is **The Loom**, a galaxy of ~2,500 glowing particles streaming along spiral
+  arms around a lens-flare seed, crossed by three gimbal rings that are the kernel's real pipeline: **PLAN** (outer),
+  **ACT** (one arc per real step, coloured by its state) and **VERIFY** (one arc per real check; it seals into a closed green
+  ring when the goal verifies). The arms flow *inward* while it works, hold still when it needs you, and burst *outward* on
+  VERIFIED; the colour is the state; every real event flares the seed and ripples through the galaxy; a particle stream runs
+  to the provider being called right now; the latest event is typed out in a caption. Your AIs flank it with budget arcs, rest
+  clocks and data-class blocks. Plus the plan as a dependency graph, a **Fuel** page with the failover ladder and usage per
+  model, DATA and FRUGALITY switches, timeline with "why", models, live CPU/RAM/GPU/VRAM, approval dialogs that show the exact
+  action and default to Deny, and **STOP**. It lowers its own detail on slow machines and honours `PRAXIS_REDUCE_MOTION=1`.
 
 ## Run
 

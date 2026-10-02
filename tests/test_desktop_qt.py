@@ -136,6 +136,11 @@ class QtUI(unittest.TestCase):
         self.assertTrue(pump(lambda: win.pill.text() == "READY"))
         self.assertTrue(win.mission.run_btn.isEnabled())                              # ready for the next goal
         self.assertEqual(win.mission.core.progress, 1.0)
+        core = win.mission.core                                                       # and the three rings carry the real result:
+        self.assertEqual(core.ring_states(0), ["ran"])                                # PLAN: accepted
+        self.assertEqual(core.ring_states(1), ["verified"])                           # ACT: the one real step, verified
+        self.assertTrue(core.pipeline["sealed"]); self.assertEqual(core.ring_states(2), ["verified"])   # VERIFY: sealed shut
+        self.assertEqual(core.legend()[1], ("ACT", "1/1", "ok")); self.assertEqual(core.legend()[2], ("VERIFY", "sealed", "ok"))
 
     def test_goal_started_before_the_first_tick_still_streams_its_events(self):
         """Regression: the history snapshot must not swallow the first goal's events (Tk had this race)."""
@@ -211,6 +216,27 @@ class QtUI(unittest.TestCase):
         m.show_view(View(status="RUNNING", steps=steps, active_provider="groq/gpt-oss"), "working", False, [])
         self.assertEqual(m.core.active, "groq/gpt-oss")
 
+    def test_the_view_maps_onto_the_three_rings(self):
+        win, ctl, ws = self.make()
+        m = win.mission
+        steps = [StepView("s1", "fs.write", "w", 2, "verified"), StepView("s2", "shell.run", "r", 2, "running", ["s1"]),
+                 StepView("s3", "fs.write", "x", 2, "pending", ["s2"])]
+        cases = [
+            (View(), ("none", [], [], False)),
+            (View(status="PLANNING", goal_text="g"), ("planning", [], [], False)),
+            (View(status="RUNNING", steps=steps), ("ready", ["verified", "running", "pending"], [], False)),
+            (View(status="RUNNING", steps=steps, evidence=[{"passed": True, "claim": "a"}, {"passed": False, "claim": "b"}]),
+             ("ready", ["verified", "running", "pending"], [True, False], False)),
+            (View(status="VERIFIED", steps=steps, evidence=[{"passed": True, "claim": "a"}]), ("ready", ["verified", "running", "pending"], [True], True)),
+            (View(status="VERIFIED", steps=steps), ("ready", ["verified", "running", "pending"], [], False)),     # no evidence: never "sealed"
+            (View(status="FAILED", reason="planning failed: no model", goal_text="g"), ("failed", [], [], False)),
+            (View(status="FAILED", reason="step s2 failed", steps=steps), ("ready", ["verified", "running", "pending"], [], False)),
+        ]
+        for view, (plan, st, ck, sealed) in cases:
+            m.show_view(view, "idle", False, [])
+            self.assertEqual((m.core.pipeline["plan"], m.core.pipeline["steps"], m.core.pipeline["checks"], m.core.pipeline["sealed"]),
+                             (plan, st, ck, sealed), (view.status, view.reason))
+
     def test_core_lights_the_provider_that_is_being_called_right_now(self):
         gate = threading.Event()
         win, ctl, ws = self.make(hook=lambda: gate.wait(10))
@@ -218,6 +244,8 @@ class QtUI(unittest.TestCase):
         self.goal(win, "make a.txt")
         self.assertTrue(pump(lambda: win.mission.core.active == "scripted", 5))      # blocked INSIDE the model call
         self.assertEqual(win.mission.core.title, "PLANNING")
+        self.assertEqual(win.mission.core.pipeline["plan"], "planning")              # the PLAN ring is circling
+        self.assertEqual(win.mission.core.legend()[0], ("PLAN", "analysing", "accent"))
         gate.set()
         self.assertTrue(pump(self.verified(win)))
         self.assertEqual(win.mission.core.active, "")                                 # the beam goes out when the call returns

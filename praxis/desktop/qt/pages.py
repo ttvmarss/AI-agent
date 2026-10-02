@@ -137,6 +137,10 @@ class MissionPage(QWidget):
         else:
             mode, ttl, sub = "idle", "READY", "describe an outcome below"
         self.core.set_state(mode, prog, ttl, sub)
+        checks = [bool(e["passed"]) for e in v.evidence]
+        plan = ("planning" if v.status == "PLANNING" else "ready" if v.steps
+                else "failed" if v.status == "FAILED" and v.reason.startswith("planning failed") else "none")
+        self.core.set_pipeline(plan, [s.state for s in v.steps], checks, sealed=v.status == "VERIFIED" and bool(checks))   # the three rings
         self.core.set_footer(footer)
         if state == "starting":
             self.core.set_caption("Booting: detecting hardware, tools and sandbox")
