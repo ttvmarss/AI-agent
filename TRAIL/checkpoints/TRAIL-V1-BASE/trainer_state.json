@@ -1,0 +1,17 @@
+{
+  "best_val": 2.7283323764801026,
+  "config_digest": "7ac763d6a637c829",
+  "precision": "fp32",
+  "schedule": {
+    "base_lr": 0.003,
+    "kind": "cosine",
+    "min_lr_ratio": 0.1,
+    "total": 3000,
+    "warmup": 100
+  },
+  "seed": 1337,
+  "stage": "pretrain",
+  "step": 3000,
+  "tokens": 24576000,
+  "world_size": 1
+}

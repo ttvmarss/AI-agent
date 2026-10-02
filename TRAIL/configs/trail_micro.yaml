@@ -1,0 +1,39 @@
+# Architecture verification / local development. Trainable on a CPU.
+name: trail-micro
+generation: 1
+seed: 1337
+
+model:
+  n_layers: 6
+  d_model: 256
+  n_heads: 8
+  n_kv_heads: 4
+  max_seq_len: 256
+  rope_theta: 10000.0
+  tie_embeddings: true
+
+tokenizer:
+  vocab_size: 2048
+
+data:
+  sources: [datasets/raw]
+  output: datasets/processed/trail_micro
+  mixture: {language: 0.28, code: 0.30, technical: 0.14, structured_data: 0.08, science: 0.12, mathematics: 0.08}
+  val_fraction: 0.02
+
+training:
+  run_dir: checkpoints/trail-micro
+  seq_len: 256
+  batch_size: 16
+  max_steps: 3000
+  lr: 3.0e-3
+  warmup_steps: 100
+  grad_accum: 2
+  eval_interval: 250
+  checkpoint_interval: 500
+
+# Curriculum: fractions of total steps. Early training favours plain language and structure, later phases add code and technical text.
+curriculum:
+  - {until: 0.25, mixture: {language: 0.50, code: 0.20, technical: 0.08, structured_data: 0.08, science: 0.10, mathematics: 0.04}}
+  - {until: 0.70, mixture: {language: 0.28, code: 0.30, technical: 0.14, structured_data: 0.08, science: 0.12, mathematics: 0.08}}
+  - {until: 1.00, mixture: {language: 0.20, code: 0.32, technical: 0.20, structured_data: 0.05, science: 0.13, mathematics: 0.10}}

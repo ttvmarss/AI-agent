@@ -1,0 +1,4 @@
+No open-source licence has been chosen for TRAIL yet.
+
+Until the project owner picks one (and replaces this file), all rights are reserved by the owner. The public-domain and permissively licensed
+training material that the corpus script gathers keeps its own licences (see datasets/raw/PROVENANCE.jsonl after running scripts/fetch_corpus.py).
