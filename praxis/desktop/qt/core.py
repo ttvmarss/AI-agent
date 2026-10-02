@@ -1141,7 +1141,5 @@ class CoreView(QWidget):
             p.setPen(Qt.NoPen); p.setBrush(QColor(tc.red(), tc.green(), tc.blue(), int(255 * pulse))); p.drawEllipse(QPointF(w - tw - 6, 22), 3.2, 3.2)
             p.setPen(QColor(tc.red(), tc.green(), tc.blue(), 235))
             p.drawText(QRectF(w - tw + 4, 12, tw - 8, 20), Qt.AlignVCenter | Qt.AlignLeft, tag)
-        if self.footer:
-            p.setFont(self._font(self.mono, 8, None, 2)); p.setPen(qc("dim"))
-            p.drawText(QRectF(0, h - 20, w, 14), Qt.AlignCenter, self.footer)
+        # (the ROUTING / DATA / MODELS line under the dial is no longer drawn: the screen is the reactor and nothing else; F2/F3 still change them)
 

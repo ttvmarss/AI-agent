@@ -594,6 +594,20 @@ class Reactor(unittest.TestCase):
             t0 = c.reactor.t; c.advance(0.2)
             self.assertAlmostEqual(c.reactor.t - t0, 0.04, places=3)
 
+    def test_no_caption_plate_and_no_footer_line_are_drawn(self):
+        c = self.make(); c.timer.stop(); c.set_state("idle", 0, "READY", "")
+        c.set_caption(""); c.set_footer(""); c.t = 5.0
+        base = render(c)
+        c.set_caption("How can I make you on a MCU Tony Stark level?"); c.set_footer("ROUTING BALANCED   \u00b7   DATA PROJECT   \u00b7   8 MODELS")
+        for _ in range(60): c.advance(1 / 30)           # the caption used to type itself out
+        c.t = 5.0; c._last = c._last
+        after = render(c)
+        h, w = base.height(), base.width()
+        box = (w * 0.25, h - 90, w * 0.75, h)            # where the pill and the grey line used to sit
+        a = sum(r + g + b for _, _, r, g, b in pixels(base, *box, 2))
+        b2 = sum(r + g + b for _, _, r, g, b in pixels(after, *box, 2))
+        self.assertLess(abs(a - b2) / max(1, a), 0.02)
+
     def test_calm_states_run_at_a_lower_frame_rate_than_working(self):
         c = self.make()
         c.set_state("idle", 0, "READY", ""); calm = c._base_ms
