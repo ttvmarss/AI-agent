@@ -20,7 +20,7 @@ class VoiceLoop:
         self.recognizer, self.mic, self.speaker, self.voice, self.speak_on = recognizer, mic, speaker, voice, speak
         self.log = log or (lambda *_: None)
         self.seg = segmenter or audio.Segmenter()
-        brain = Chat(actions.chat) if chat and getattr(actions, "chat", None) else None
+        brain = Chat(actions.chat, facts=getattr(actions, "facts", None)) if chat and getattr(actions, "chat", None) else None
         self.conductor = Conductor(actions, self.say, wake_word=wake_word, attentive_s=attentive_s, approval_s=approval_s, log=self.log, chat=brain,
                                    wake_required=wake_required)
         self.muted, self.speaking, self.thinking, self.deaf_until = False, False, False, 0.0

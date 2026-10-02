@@ -37,6 +37,24 @@ def verify(spec, ws, command_gate=None):
                     return Result(False, f"command_ok {spec['cmd']!r} refused by guard: {why}")
             r = ws.shell_run(spec["cmd"], spec.get("timeout", 120))
             return Result(r["returncode"] == 0, f"command_ok {spec['cmd']} rc={r['returncode']}", r["output"][-1500:])
+        if t == "command_output_contains":  # run a program and check what it PRINTS (no redirect needed); same guard as any command
+            if command_gate is not None:
+                allowed, why = command_gate(spec["cmd"])
+                if not allowed:
+                    return Result(False, f"command_output_contains {spec['cmd']!r} refused by guard: {why}")
+            r = ws.shell_run(spec["cmd"], spec.get("timeout", 120))
+            out = r["output"]
+            want = spec["text"]
+            ok = r["returncode"] == 0 and (want in out)
+            return Result(ok, f"command_output_contains {spec['cmd']} {want!r} rc={r['returncode']}", out[-1500:])
+        if t == "command_output_equals":
+            if command_gate is not None:
+                allowed, why = command_gate(spec["cmd"])
+                if not allowed:
+                    return Result(False, f"command_output_equals {spec['cmd']!r} refused by guard: {why}")
+            r = ws.shell_run(spec["cmd"], spec.get("timeout", 120))
+            ok = r["returncode"] == 0 and r["output"].strip() == str(spec["text"]).strip()
+            return Result(ok, f"command_output_equals {spec['cmd']} rc={r['returncode']}", r["output"][-1500:])
         if t == "none":
             return Result(True, "no verifier required (read-only step)")
     except Exception as e:

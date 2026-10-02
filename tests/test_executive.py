@@ -329,3 +329,60 @@ class Sandboxing(unittest.TestCase):
         replan_prompt = json.dumps(prov.calls[1][1])
         self.assertIn("MARKER-123", replan_prompt)
         self.assertIn("UNTRUSTED", replan_prompt)
+
+
+class OutputVerifiers(unittest.TestCase):
+    """A program's printed output is evidence: verified by running it under the same guard, no redirect needed."""
+
+    @needs_sandbox
+    def test_run_a_script_and_verify_what_it_prints(self):
+        steps = [{"id": "w", "tool": "fs.write", "args": {"path": "hi.py", "content": "print(1+1)\n"}, "deps": [], "verify": {"type": "file_exists", "path": "hi.py"}},
+                 {"id": "r", "tool": "shell.run", "args": {"cmd": "python3 hi.py"}, "deps": ["w"], "verify": {"type": "none"}}]
+        ex, ws, log, _ = mk([plan(steps, [{"type": "command_output_contains", "cmd": "python3 hi.py", "text": "2"}])])
+        self.assertEqual(ex.run("print two").status, VERIFIED)
+        ex, ws, log, _ = mk([plan(steps, [{"type": "command_output_equals", "cmd": "python3 hi.py", "text": "3"}])])
+        self.assertNotEqual(ex.run("print two").status, VERIFIED)           # wrong claim is never rubber-stamped
+
+    def test_a_redirect_in_a_verifier_is_refused_by_the_guard(self):
+        from praxis.verifiers import verify
+        r = verify({"type": "command_output_contains", "cmd": "python3 x.py > out.txt", "text": "a"}, None, command_gate=lambda c: (False, "redirect"))
+        self.assertFalse(r.passed)
+        self.assertIn("refused by guard", r.detail if hasattr(r, "detail") else str(r))
+
+
+class Undo(unittest.TestCase):
+    def _run(self, ex, name, text):
+        steps = [{"id": "w", "tool": "fs.write", "args": {"path": name, "content": text}, "deps": [], "verify": {"type": "file_exists", "path": name}}]
+        return steps
+
+    def test_undo_restores_the_workspace_and_is_itself_undoable(self):
+        a = plan([{"id": "w", "tool": "fs.write", "args": {"path": "a.txt", "content": "ONE"}, "deps": [], "verify": {"type": "file_exists", "path": "a.txt"}}],
+                 [{"type": "file_equals", "path": "a.txt", "text": "ONE"}])
+        ex, ws, log, _ = mk([a])
+        self.assertEqual(ex.run("write a").status, VERIFIED)
+        self.assertEqual(get(os.path.join(ws, "a.txt")), "ONE")
+        ok, msg = ex.undo_last()
+        self.assertTrue(ok, msg)
+        self.assertFalse(os.path.exists(os.path.join(ws, "a.txt")))
+        ev = [e for e in log.all(type_="goal.undone")]
+        self.assertEqual(len(ev), 1)
+        safety = ev[0].payload["safety"]
+        ex.ws.rollback(safety)                                   # the undo can be undone
+        self.assertEqual(get(os.path.join(ws, "a.txt")), "ONE")
+        ok, msg = ex.undo_last()                                 # the same goal is not undone twice
+        self.assertFalse(ok)
+        self.assertIn("nothing to undo", msg)
+        self.assertTrue(log.verify_chain())
+
+    def test_a_failed_goal_has_nothing_to_undo_and_a_pruned_checkpoint_is_reported_honestly(self):
+        ex, ws, log, _ = mk([])
+        self.assertEqual(ex.undo_last()[0], False)
+        a = plan([{"id": "w", "tool": "fs.write", "args": {"path": "b.txt", "content": "x"}, "deps": [], "verify": {"type": "file_exists", "path": "b.txt"}}],
+                 [{"type": "file_exists", "path": "b.txt"}])
+        ex, ws, log, _ = mk([a])
+        ex.run("write b")
+        import shutil
+        shutil.rmtree(ex.ws.ckpt_dir)
+        ok, msg = ex.undo_last()
+        self.assertFalse(ok); self.assertIn("cleaned up", msg)
+        self.assertTrue(os.path.exists(os.path.join(ws, "b.txt")))      # and nothing was touched

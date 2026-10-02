@@ -28,8 +28,10 @@ SYSTEM = """You are the planner inside PRAXIS. Output ONLY a JSON object:
  "success":[verifier,...]}
 Tools: fs.read{path} fs.list{path} fs.write{path,content} shell.run{cmd}.{delegate}
 Verifiers: file_exists{path} file_absent{path} file_contains{path,text} file_equals{path,text} file_not_contains{path,text}
-command_ok{cmd} none. command_ok runs with NO shell: no pipes, redirects, $(), &&, or globs; only plain programs such as
-`python3 -m unittest`. Prefer file_equals/file_contains for checking file content. "success" must contain at least one real check of the user's outcome.
+command_ok{cmd} command_output_contains{cmd,text} command_output_equals{cmd,text} none.
+Commands (shell.run AND verifiers) run with NO shell: no pipes, redirects (>), $(), &&, or globs; only a plain program with
+arguments such as `python3 hello.py` or `python3 -m unittest`; anything else is refused. To check what a program PRINTS use
+command_output_contains, never a redirect into a file. Prefer file_equals/file_contains for checking file content. "success" must contain at least one real check of the user's outcome.
 If you need file contents to plan, reply with ONLY {"observe": ["path", ...]} (at most 5 files, once); their
 contents are returned labeled UNTRUSTED and you then reply with the plan. To change files, read them first, then use
 fs.write with the full new content; do NOT use shell.run for editing or transforming files. shell.run is for running
@@ -500,6 +502,34 @@ class Executive:
                   "evidence": report.evidence}, [parent])
         self._prune_checkpoints()
         return report
+
+    def undo_last(self):
+        """Put the workspace back the way it was just before the most recent goal that left changes behind. -> (ok, message).
+        Non-destructive: the current state is saved as a safety checkpoint first (`praxis rollback <id>` brings it back), so an undo is
+        itself undoable. Every outcome is an event, so the log still tells the whole truth."""
+        reports = {e.goal_id: e for e in self.log.all(type_="goal.report")}
+        undone = {e.payload.get("goal") for e in self.log.all(type_="goal.undone")}
+        for ck in sorted(self.log.all(type_="checkpoint"), key=lambda e: -e.id):
+            r = reports.get(ck.goal_id)
+            if r is None or ck.goal_id in undone or r.payload.get("rolled_back") or r.payload.get("status") == "CANCELLED":
+                continue                                    # unfinished, already undone, or it already restored the workspace itself
+            cid = ck.payload.get("id", "")
+            if not cid or not os.path.isdir(os.path.join(self.ws.ckpt_dir, cid)):
+                msg = "I can't undo that one: its checkpoint has been cleaned up."
+                self._ev(ck.goal_id, "executive", "undo.refused", {"reason": msg}, [ck.id])
+                return False, msg
+            safety = self.ws.checkpoint()
+            self.ws.rollback(cid)
+            intent = next(iter(self.log.all(goal_id=ck.goal_id, type_="goal.intent")), None)
+            self._ev(ck.goal_id, "executive", "goal.undone",
+                     {"goal": ck.goal_id, "checkpoint": cid, "safety": safety, "text": (intent.payload.get("text", "") if intent else "")}, [ck.id])
+            self._ev(ck.goal_id, "executive", "undo.safety", {"id": safety}, [ck.id])
+            old = [e.payload["id"] for e in self.log.all(type_="undo.safety")][:-3]      # keep the newest three safety copies, no more
+            self.ws.prune(old)
+            return True, "Undone. The workspace is back to how it was before that goal."
+        msg = "There's nothing to undo."
+        self._ev("undo", "executive", "undo.refused", {"reason": msg})
+        return False, msg
 
     def why(self, event_id):
         lines = []

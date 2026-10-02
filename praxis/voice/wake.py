@@ -48,7 +48,7 @@ def split_trailing_wake(text, wake="praxis", aliases=ALIASES):
 
 @dataclass
 class Intent:
-    kind: str          # goal | stop | approve | deny | confirm_risky | status | resume | data | frugal | mute | wake_only | unknown
+    kind: str          # goal | stop | approve | deny | confirm_risky | status | resume | undo | data | frugal | mute | wake_only | unknown
     arg: str = ""
 
 
@@ -58,6 +58,7 @@ APPROVE = re.compile(r"^(i )?(approve|approved|prove|proved|prue)\b|^(yes |yeah 
 YES = re.compile(r"^(yes|yeah|yep|yup|sure|go ahead|do it|okay|ok|proceed|confirmed?)\b")
 STATUS = re.compile(r"\b(status|what('s| is) (going on|happening|the status)|how('s| is) it going|are you (done|there|finished|working)|report|progress)\b")
 RESUME = re.compile(r"^resume\b")
+UNDO = re.compile(r"^(undo|revert|roll ?back)( that| it| this| the last( goal| change| thing| one)?| everything| what you (just )?did)?$|^take that back$")
 MUTE = re.compile(r"^(mute|stop listening|go to sleep|be quiet|silence)\b")
 DATA = re.compile(r"\b(?P<a>private|project|open)\b( mode| class| data)?$|\b(data|privacy)( class| mode)?( to)? (?P<b>private|project|open)\b")
 FRUGAL = re.compile(r"\b(frugal|balanced|quality)( mode)?\b|\buse less claude\b|\bsave (my )?(tokens|usage)\b|\bbest quality\b")
@@ -89,6 +90,8 @@ def parse(rest, *, busy=False, approving=False, risky=False):
         return Intent("mute")
     if RESUME.match(t):
         return Intent("resume")
+    if UNDO.match(t):
+        return Intent("undo")
     m = DATA.search(t)
     if m and len(t.split()) <= 6:
         return Intent("data", m.group("a") or m.group("b"))

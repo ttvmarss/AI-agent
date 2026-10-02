@@ -153,6 +153,14 @@ class Conductor:
         if k == "status":
             self.say(self.a.status_text()); self._attend(now)
             return "status"
+        if k == "undo":
+            if busy:
+                self.say("I'm still working. Say stop first, and I'll restore the workspace.")
+            elif self.a.undo():
+                self._attend(now)
+            else:
+                self.say("I can't undo right now.")
+            return "undo"
         if k == "resume":
             if self.a.resume():
                 self.say("Resuming the interrupted goal.")

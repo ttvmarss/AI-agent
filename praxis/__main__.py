@@ -216,6 +216,7 @@ def main(argv=None):
     add("why", (["event_id"], {"type": int}))
     add("verify-log")
     add("rollback", (["checkpoint"], {}))
+    add("undo")
     add("doctor", (["--ping"], {"action": "store_true", "help": "send a tiny real prompt to one model per provider"}),
         (["--ping-all"], {"action": "store_true", "help": "ping every configured model (costs a little usage)"}))
     add("models", (["--recommend"], {"action": "store_true", "help": "what to install for this hardware"}))
@@ -320,6 +321,8 @@ def main(argv=None):
     ex = _executive(ws, log, stack, a)
     if a.cmd == "why":
         print(ex.why(a.event_id)); return 0
+    if a.cmd == "undo":
+        ok, msg = ex.undo_last(); print(msg); return 0 if ok else 1
     if a.cmd == "rollback":
         ex.ws.rollback(a.checkpoint); print(f"restored checkpoint {a.checkpoint}"); return 0
     if a.cmd == "status":

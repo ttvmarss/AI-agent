@@ -201,6 +201,7 @@ class FakeActions:
     def set_frugality(self, k): self.calls.append(("frugal", k))
     def resume(self): self.calls.append(("resume",)); return False
     def mute(self): self.calls.append(("mute",))
+    def undo(self): self.calls.append(("undo",)); return True
     def status_text(self): return "STATUS"
 
 
@@ -558,3 +559,48 @@ class Rules(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TonyAudit(unittest.TestCase):
+    """Defects found by auditing the whole system as Tony Stark would, each pinned so it cannot come back."""
+
+    def test_spoken_requests_are_routed_to_the_right_place(self):
+        from praxis.voice.chat import classify
+        tasks = ["fix the login bug", "praxis create a flask app", "what's in my downloads folder", "look at main.py and tell me what it does",
+                 "why is the build failing, fix it", "what does utils.py do", "is there a bug in my code", "check if the tests pass"]
+        chats = ["what is a mutex", "what did you just do", "which brain are you using", "tell me a joke and then write a poem", "what is a file",
+                 "explain what a python module is", "how much have we spent", "hello praxis"]
+        for t in tasks: self.assertEqual(classify(t), "task", t)
+        for t in chats: self.assertEqual(classify(t), "chat", t)
+
+    def test_undo_is_its_own_intent_and_never_a_goal(self):
+        from praxis.voice import wake
+        for t in ("undo", "undo that", "undo the last change", "revert it", "roll back", "take that back", "undo what you just did"):
+            self.assertEqual(wake.parse(t).kind, "undo", t)
+        self.assertEqual(wake.parse("undo the migration in the database schema file").kind, "goal")     # a real goal that merely starts with the word
+
+    def test_the_conductor_undoes_when_idle_and_refuses_while_working(self):
+        a, said = FakeActions(), []
+        c = Conductor(a, lambda t, urgent=False: said.append(t), clock=lambda: 50.0, wake_required=False)
+        c.hear("undo that")
+        self.assertIn(("undo",), a.calls)
+        a.calls.clear(); a._state = "working"; c.last_text = ""
+        c.hear("praxis undo the last change")
+        self.assertNotIn(("undo",), a.calls)
+        self.assertTrue(any("stop first" in x for x in said))
+
+    def test_the_chat_model_is_given_the_real_facts_and_told_to_use_nothing_else(self):
+        from praxis.voice.chat import Chat
+        from praxis.voice.narrator import describe_facts
+        from praxis.desktop.view import View, StepView
+        v = View(goal_id="g", goal_text="Create hello.py", status="VERIFIED", steps=[StepView("w", "fs.write", "hello.py")],
+                 evidence=[{"claim": "file_exists hello.py", "passed": True}], cost=0.0123)
+        seen = []
+        ch = Chat(lambda m: seen.append(m) or "I created hello.py.", facts=lambda: describe_facts(v, "idle", "C:/proj", ["claude"]))
+        ch.reply("what did you just do")
+        sysmsg = seen[0][0]["content"]
+        self.assertIn("FACTS:", sysmsg); self.assertIn("Create hello.py", sysmsg); self.assertIn("file exists hello.py", sysmsg); self.assertIn("$0.012", sysmsg)
+        self.assertIn("never invent", sysmsg)
+        seen.clear(); ch2 = Chat(lambda m: seen.append(m) or "ok", facts=lambda: 1 / 0); ch2.reply("what is a mutex")     # a broken facts source never breaks chat
+        self.assertNotIn("FACTS:", seen[0][0]["content"])
+        self.assertIn("not done anything", describe_facts(View(), "idle"))

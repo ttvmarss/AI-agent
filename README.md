@@ -55,7 +55,7 @@ ears, Piper for its voice) and **you just talk: no name needed** (set `wake_requ
 sentences that start with "Praxis"). It ignores its own voice, long conversations that aren't aimed at it, and noise. *"Create a file called hello.txt that says hello"* → it
 repeats what it understood, plans, does, verifies, and tells you the result in one sentence. After it speaks you have ~10 s to follow
 up without the name. *"Praxis, stop"* cancels at once. *"Praxis, status"*, *"frugal / balanced / quality"*, *"private / project / open"*,
-*"resume"* and *"mute"* (F4 turns listening back on) work too. **Approvals are spoken in full and need an answer: a plain "yes" is
+*"undo that"*, *"resume"* and *"mute"* (F4 turns listening back on) work too. **Approvals are spoken in full and need an answer: a plain "yes" is
 enough only for mild actions; anything risky needs the word "approve", and every approval must start with its name so a television can't approve for you; silence is a denial.** If a microphone or model is missing it says
 why on screen and shows a one-line typing field instead. The microphone is deaf while it speaks, so it never answers itself.
 
@@ -71,7 +71,7 @@ python -m praxis doctor --ping      # what is installed / logged in / sandboxed;
 python -m praxis free               # the free cloud tiers: limits, data terms, sources;  `praxis keys set groq` adds a key
 python -m praxis hardware           # your machine + recommended local models + Ollama tuning
 python -m praxis bench --max-cost 3 # MEASURE every provider (the router then uses the scores); --holdout for untuned tasks
-python -m praxis run "..." --workspace ./proj     # also: resume | status | why | rollback | verify-log | pull <tag>
+python -m praxis run "..." --workspace ./proj     # also: resume | undo | status | why | rollback | verify-log | pull <tag>
 pip install -e ".[ui,voice]"         # optional: `praxis`, `praxis-desktop`, the PySide6 window, and hands-free voice
 python -m unittest discover -s tests -t .        # 530+ tests (UI tests need PySide6 / tkinter; they skip otherwise)
 ```

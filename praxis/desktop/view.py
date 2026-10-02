@@ -110,6 +110,10 @@ def summarize(e):
         return f"Replan {'approved by you' if p.get('approved') else 'not approved'}", "ok" if p.get("approved") else "warn"
     if t == "goal.cancelled":
         return "Stopped by you; workspace restored", "warn"
+    if t == "goal.undone":
+        return f"Undone: workspace restored to before '{str(p.get('text', ''))[:60]}' (safety copy {p.get('safety', '?')})", "warn"
+    if t == "undo.refused":
+        return str(p.get("reason", "Nothing to undo")), "warn"
     if t == "goal.report":
         r = p.get("reason")
         return f"{p.get('status')}" + (f": {r}" if r else ""), "ok" if p.get("status") == "VERIFIED" else "bad"

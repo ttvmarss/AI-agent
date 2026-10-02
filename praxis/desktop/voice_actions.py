@@ -1,6 +1,6 @@
 """The conductor's hands: what the voice can do to PRAXIS. Thin and thread-safe; every call goes through the Controller's
 locks, so a spoken command is exactly as safe as a typed or clicked one."""
-from ..voice.narrator import describe_status
+from ..voice.narrator import describe_facts, describe_status
 
 STRATEGY = {"quality": "measured", "balanced": "auto", "frugal": "frugal"}
 
@@ -33,12 +33,21 @@ class ControllerActions:
     def resume(self):
         return self.c.resume()
 
+    def undo(self):
+        return self.c.undo()
+
     def mute(self):
         if self.on_mute:
             self.on_mute()
 
     def chat(self, messages):
         return self.c.chat(messages)
+
+    def facts(self):
+        c = self.c
+        stack = getattr(c, "_stack", None)
+        brains = sorted({p.card.name.split("/")[0] for p in getattr(stack, "providers", [])}) if stack else []
+        return describe_facts(c.view_now(), c.state, c.workspace, brains)
 
     def status_text(self):
         try:

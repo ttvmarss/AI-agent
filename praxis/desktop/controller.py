@@ -189,6 +189,10 @@ class Controller:
             raise RuntimeError("no models yet")
         return st.router.call("chat", messages, self.effective_data_class())
 
+    def undo(self):
+        """Undo the last goal's changes (idle only; the result is an event, so it is spoken and shown like everything else)."""
+        return self._launch(lambda ex: ex.undo_last(), None, True)
+
     def resume(self):
         if not self.unfinished():
             return False

@@ -27,6 +27,10 @@ def for_event(etype, p):
         return f"I rejected that plan: {clean(p.get('error'), 90)}.", False
     if etype == "guard.decision" and p.get("verdict") == "DENY":
         return f"I blocked a step: {clean(p.get('reason'), 100)}.", False
+    if etype == "goal.undone":
+        return "Undone. The workspace is back to how it was before that goal.", True
+    if etype == "undo.refused":
+        return clean(p.get("reason"), 100) or "I can't undo that.", True
     if etype == "goal.report":
         status, reason = p.get("status"), clean(p.get("reason"))
         ev = p.get("evidence")
@@ -55,6 +59,34 @@ def approval_prompt(req):
     risky = req.cls >= 4
     ask = "Say Praxis, approve to allow it, or deny." if risky else "Say Praxis, yes to allow it, or deny."
     return f"I need your approval to {what}. {ask}"
+
+
+def describe_facts(view, state, workspace="", brains=(), cost=None):
+    """What is TRUE about this session, as plain lines for the conversational model. It may state only these as things it did."""
+    lines = []
+    if workspace:
+        lines.append(f"Workspace folder: {workspace}.")
+    if brains:
+        lines.append("Models available: " + ", ".join(list(brains)[:6]) + ".")
+    lines.append(f"State right now: {state}.")
+    if not getattr(view, "goal_id", ""):
+        lines.append("No goal has been run in this workspace yet, so you have not done anything on the computer.")
+        return " ".join(lines)
+    lines.append(f"Latest goal: {clean(view.goal_text, 160)!r}, status {view.status}.")
+    steps = [f"{s.tool} {s.summary}".strip() for s in view.steps][:6]
+    if steps:
+        lines.append("Its steps: " + "; ".join(clean(x, 60) for x in steps) + ".")
+    ev = [("passed" if e.get("passed") else "FAILED") + ": " + clean(e.get("claim"), 70) for e in view.evidence][:5]
+    if ev:
+        lines.append("Checks: " + "; ".join(ev) + ".")
+    if view.reason:
+        lines.append(f"Reason: {clean(view.reason, 120)}.")
+    if view.rolled_back:
+        lines.append("The workspace was rolled back, so that goal left no changes.")
+    c = view.cost if cost is None else cost
+    if c:
+        lines.append(f"Spent on models for it: ${c:.3f}.")
+    return " ".join(lines)
 
 
 def describe_status(view, state, pending):
