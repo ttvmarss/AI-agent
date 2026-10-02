@@ -22,6 +22,7 @@ def candidates(name, env=None, isdir=os.path.isdir, listdir=os.listdir, walk=os.
     roots, direct = [], []
     if name == "devin":
         direct += [os.path.join(local, "Programs", "Devin", "bin", "devin"), os.path.join(local, "Programs", "Devin", "resources", "app", "bin", "devin"),
+                   os.path.join(local, "devin", "cli", "bin", "devin"),            # where the official installer puts it (seen on a real install)
                    os.path.join(local, "devin", "bin", "devin"), os.path.join(local, "Devin", "bin", "devin"),
                    os.path.join(prof, ".devin", "bin", "devin"), os.path.join(home, ".devin", "bin", "devin"),
                    os.path.join(home, ".local", "bin", "devin")]

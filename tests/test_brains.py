@@ -94,6 +94,11 @@ class Discovery(unittest.TestCase):
         self.assertEqual(found, cli)
         self.assertIsNone(discover.find("devin", self.env, verify=lambda p: False))            # an editor launcher fails the check
 
+    def test_the_official_installers_folder_is_searched(self):
+        cli = self.touch(self.local, "devin", "cli", "bin", "devin.EXE")
+        self.assertEqual(discover.find("devin", self.env, verify=lambda p: True), cli)
+        self.assertIn(os.path.join(self.local, "devin", "cli", "bin", "devin.exe"), discover.candidates("devin", self.env))
+
     def test_the_check_runs_help_and_needs_the_print_flag(self):
         class R:  # a fake completed process
             def __init__(self, out): self.stdout, self.stderr = out, ""
