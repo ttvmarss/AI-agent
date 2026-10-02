@@ -232,6 +232,7 @@ def main(argv=None):
     add("models", (["--recommend"], {"action": "store_true", "help": "what to install for this hardware"}))
     add("hardware")
     add("voice")
+    add("control", (["action"], {"nargs": "?", "choices": ["selftest"], "default": "selftest"}))
     add("pull", (["tag"], {}), (["--yes"], {"action": "store_true", "help": "do not ask for confirmation"}))
     add("bench", (["--trials"], {"type": int, "default": 1}), (["--providers"], {"default": ""}),
         (["--all-ollama"], {"action": "store_true", "help": "benchmark every installed Ollama model that fits"}),
@@ -250,6 +251,9 @@ def main(argv=None):
         return cmd_keys(a)
     if a.cmd == "free":
         return cmd_free(a, ws)
+    if a.cmd == "control":
+        from .control import selftest
+        return selftest(ws)
     stack = build_stack(ws)
     if a.cmd == "doctor":
         return cmd_doctor(stack, ws, a.ping, a.ping_all)

@@ -30,9 +30,18 @@ def _one(what, opener):
     return action, what
 
 
-def match(text, opener):
+SHOT = re.compile(POLITE + r"(?:take|grab|capture|snap|get)\s+(?:me\s+)?(?:a\s+|the\s+)?(?:screenshot|screen\s?shot|screen capture|picture of (?:my|the) screen)(?:\s+of\s+(?:my|the)\s+(?:screen|desktop))?" + TAIL, re.I)
+
+
+def match(text, opener, control=None):
     """-> a plan dict (the same shape a model would write) or None. "Open YouTube and Google Chrome" is two steps, still no model."""
     t = re.sub(r"[.!?,]+$", "", str(text or "").strip())
+    if SHOT.fullmatch(t):
+        if control is None or not control.available:
+            return None
+        chk = {"type": "file_exists", "path": "screenshot.png"}
+        return {"steps": [{"id": "shot", "tool": "desktop.screenshot", "args": {"name": "screenshot.png"}, "deps": [], "verify": dict(chk)}],
+                "success": [chk], "reflex": "screenshot", "label": "screenshot"}
     m = PATTERN.match(t)
     if not m:
         return None

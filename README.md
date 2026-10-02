@@ -46,6 +46,14 @@ goal -> recall (memory) -> plan (model A) -> observe files (labeled UNTRUSTED) -
   committed, the engine side is `praxis/ui/` (a local-only, key-and-cookie-locked server streaming the engine's real state). The older Qt
   window is still available as `python -m praxis.desktop --qt`.
 
+## Desktop control
+
+It can drive your PC, not only open programs: list and focus windows, type, press shortcuts, click, scroll, use the clipboard, take screenshots,
+close a window politely. *"Take a screenshot"* and *"open Chrome and Notepad"* need no model at all. Anything that touches the keyboard or mouse asks
+once per goal (the card shows the exact action); **Esc or the mouse in the top-left corner stops it instantly**. It will never type into a terminal,
+the Run dialog or a password prompt, and Win+R / Ctrl+Alt+Del are refused. On a new PC run `python -m praxis control selftest` (safe: types and clicks
+nothing). Windows only; the Windows backend is unverified until you run that.
+
 ## Talk to it
 
 No chat box, no mic button: the window is just the Reactor. With the voice extra installed it listens all the time (locally: Whisper for

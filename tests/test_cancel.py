@@ -55,7 +55,7 @@ class CancelTests(unittest.TestCase):
         steps = [W("s1", "a.txt", "1"), W("s2", "b.txt", "2", deps=["s1"])]
         ex = Executive(ws, log, Router([ScriptedProvider([plan(steps, [{"type": "file_exists", "path": "b.txt"}])])]))
         real = exe.verify
-        def verify_then_stop(spec, w, gate=None, processes=None):
+        def verify_then_stop(spec, w, gate=None, processes=None, desktop=None):
             r = real(spec, w, gate)
             ex.cancel()                      # Stop pressed while step 1 is being verified
             return r

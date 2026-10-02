@@ -1,5 +1,6 @@
 """Verifiers: typed, executable checks. CLAIMS REQUIRE EVIDENCE."""
 import os
+import time
 from dataclasses import dataclass
 
 
@@ -10,7 +11,7 @@ class Result:
     output: str = ""  # raw tool output (UNTRUSTED data); fed to replanners, never to the reason string
 
 
-def verify(spec, ws, command_gate=None, processes=None):
+def verify(spec, ws, command_gate=None, processes=None, desktop=None):
     """spec: {"type": ..., ...}. Unknown verifier types FAIL (never silently pass).
 
     `command_gate(cmd) -> (allowed, reason)` is the Guard: verifier commands are actions like any other."""
@@ -67,6 +68,19 @@ def verify(spec, ws, command_gate=None, processes=None):
                 processes.sleep(0.5)
                 hit = next((n for n in names if processes.running(n)), None)
             return Result(hit is not None, f"process_running {hit or ' / '.join(map(str, names))}" + ("" if hit else " (not found)"))
+        if t in ("window_exists", "window_active", "clipboard_contains"):  # what is really on the screen / clipboard right now
+            if desktop is None or not desktop.available:
+                return Result(False, f"{t}: desktop control is not available here")
+            if t == "clipboard_contains":
+                return Result(str(spec["text"]) in desktop.clipboard_text(), f"clipboard_contains {str(spec['text'])[:40]!r}")
+            title = str(spec["title"])
+            end = time.monotonic() + min(15.0, float(spec.get("wait", 3)))
+            check = desktop.window_exists if t == "window_exists" else desktop.window_active
+            ok = check(title)
+            while not ok and time.monotonic() < end:
+                time.sleep(0.4)
+                ok = check(title)
+            return Result(ok, f"{t} {title!r}" + ("" if ok else " (not found)"))
         if t == "none":
             return Result(True, "no verifier required (read-only step)")
     except Exception as e:

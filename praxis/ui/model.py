@@ -68,6 +68,9 @@ def approval(req):
         summary = f"Hand a task to {a.get('agent', 'a cloud agent')}"
     elif req.tool == "desktop.open":
         summary = f"Open {str(a.get('target', ''))[:80]}"
+    elif req.tool.startswith("desktop."):
+        from ..desktop.approvals import desktop_sentence
+        summary = desktop_sentence(req.tool, a)[:110]
     elif req.tool == "plan.replan":
         summary = "Accept a replacement plan written after reading your files"
     else:

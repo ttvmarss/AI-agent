@@ -41,6 +41,9 @@ def _args_summary(tool, args):
         return f"{args.get('agent', '?')}: {str(args.get('task', ''))[:70]}"
     if tool == "desktop.open":
         return f"open {str(args.get('target', ''))[:70]}"
+    if tool.startswith("desktop."):
+        from .approvals import desktop_sentence
+        return desktop_sentence(tool, args)[:80]
     return str(args.get("path", ""))
 
 

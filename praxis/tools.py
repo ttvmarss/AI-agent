@@ -7,6 +7,7 @@ import sys
 import uuid
 
 from . import winproc
+from .control import ControlError
 
 # Never copied by checkpoints, never deleted by rollback, never listed: tool-managed or regenerable trees.
 _SKIP = {".praxis", ".git", "node_modules", ".venv", "venv", "__pycache__"}
@@ -128,8 +129,10 @@ class Workspace:
 
 
 class ToolRuntime:
-    def __init__(self, workspace, agents=None, opener=None):
+    def __init__(self, workspace, agents=None, opener=None, control=None):
         from .opener import Opener
+        from .control import Controller
+        self.control = control or Controller(None, workspace)
         self.ws = workspace
         self.agents = agents or {}
         self.opener = opener or Opener(workspace.root)
@@ -140,6 +143,16 @@ class ToolRuntime:
             "shell.run": lambda a: self.ws.shell_run(a["cmd"], a.get("timeout", 60)),
             "desktop.open": lambda a: self._open(a),
             "agent.delegate": self._delegate,
+            "desktop.windows": lambda a: self.control.windows(),
+            "desktop.focus": lambda a: self.control.focus(a.get("title")),
+            "desktop.close": lambda a: self.control.close(a.get("title")),
+            "desktop.type": lambda a: self.control.type_text(a.get("text")),
+            "desktop.key": lambda a: self.control.key(a.get("keys")),
+            "desktop.click": lambda a: self.control.click(a.get("x"), a.get("y"), a.get("button", "left"), a.get("double", False)),
+            "desktop.scroll": lambda a: self.control.scroll(a.get("amount")),
+            "desktop.clipboard": lambda a: self.control.clipboard(a.get("op"), a.get("text")),
+            "desktop.screenshot": lambda a: self.control.screenshot(a.get("name", "screenshot.png")),
+            "desktop.wait": lambda a: self.control.wait(a.get("seconds", 1)),
         }
 
     def _open(self, a):
@@ -172,6 +185,8 @@ class ToolRuntime:
             return self.tools[tool](args)
         except ToolError:
             raise
+        except ControlError as e:
+            raise ToolError(str(e))
         except subprocess.TimeoutExpired:
             raise ToolError("timeout")
         except Exception as e:  # tool failures are data, not crashes
