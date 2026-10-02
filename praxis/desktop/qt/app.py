@@ -183,7 +183,7 @@ class MainWindow(QMainWindow):
         self.show_page("Mission")
         self.mission.clear_feed()
         self.mission.core.set_caption("Goal accepted. Planning...")
-        self.controller.submit(text, no_critic=not self.mission.critic.isChecked(), data_class=self.data_seg.current)
+        self.controller.submit(text, no_critic=not self.mission.critic.isChecked())     # the controller already follows the DATA switch
 
     def resume_goal(self):
         if not self.controller.resume():

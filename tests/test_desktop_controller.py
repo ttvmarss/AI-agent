@@ -198,3 +198,46 @@ class SettingsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EscalationWiring(unittest.TestCase):
+    """The UI's controller must hand the config's escalation setting to the executive (a weak model's failed work is retried)."""
+    BADP = plan([W("s1", "a.txt", "wrong")], [{"type": "file_contains", "path": "a.txt", "text": "RIGHT"}])
+    GOODP = plan([W("s1", "a.txt", "RIGHT")], [{"type": "file_contains", "path": "a.txt", "text": "RIGHT"}])
+
+    def stack(self, escalate):
+        cheap = ScriptedProvider([self.BADP], name="cheap"); cheap.tier = "free"
+        strong = ScriptedProvider([self.GOODP], name="strong"); strong.tier = "best"
+        cfg = {"limits": {"max_steps": 20, "max_model_calls": 8, "max_cost_usd": 0}, "privacy": {"data_class": "project"},
+               "routing": {"escalate": escalate, "max_escalations": 2}}
+        return types.SimpleNamespace(providers=[cheap, strong], router=Router([cheap, strong], {"planner": ["cheap", "strong"]}, None, "config"),
+                                     agents={}, sandbox=Sandbox(), cfg=cfg, registry=Registry(), skipped={}, usage=UsageTracker(),
+                                     profile=Profile("linux", "cpu", 4, 16 * GB, 50, []), cheap=cheap, strong=strong)
+
+    def run_goal(self, escalate):
+        ws, home = tempfile.mkdtemp(), tempfile.mkdtemp()
+        st = self.stack(escalate)
+        c = Controller(ws, stack_factory=lambda w: st, home=home); c.start()
+        assert wait(lambda: c.state == "idle")
+        self.assertTrue(c.submit("write RIGHT into a.txt", no_critic=True))
+        end = time.time() + 10
+        while c.state != "idle" and time.time() < end:
+            for req in c.poll().approvals:                       # without escalation the executive falls back to a replan, which asks
+                c.respond(req.id, False)                          # the human first: answer as a user pressing Deny would
+            time.sleep(0.02)
+        self.assertEqual(c.state, "idle")
+        return c, ws, st
+
+    def escalations(self, c):
+        return [e for e in c.all_events() if e.type == "escalation"]
+
+    def test_a_failed_verification_is_retried_by_the_stronger_model_when_escalation_is_on(self):
+        c, ws, st = self.run_goal(True)
+        self.assertEqual(c.poll().view.status, "VERIFIED")
+        self.assertEqual(len(self.escalations(c)), 1); self.assertEqual(self.escalations(c)[0].payload["from"], "cheap")
+        self.assertEqual(open(os.path.join(ws, "a.txt"), encoding="utf-8").read(), "RIGHT")
+
+    def test_with_escalation_off_there_is_no_escalation_and_the_goal_does_not_verify(self):
+        c, ws, st = self.run_goal(False)
+        self.assertEqual(self.escalations(c), [])                              # the flag really reached the executive
+        self.assertEqual(c.poll().view.status, "FAILED")
