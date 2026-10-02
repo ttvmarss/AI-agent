@@ -39,6 +39,8 @@ def _args_summary(tool, args):
         return str(args.get("cmd", ""))
     if tool == "agent.delegate":
         return f"{args.get('agent', '?')}: {str(args.get('task', ''))[:70]}"
+    if tool == "desktop.open":
+        return f"open {str(args.get('target', ''))[:70]}"
     return str(args.get("path", ""))
 
 
@@ -51,6 +53,8 @@ def summarize(e):
         return "Resuming after an interruption", "warn"
     if t == "memory.recall":
         return f"Recalled {len(p.get('goal_ids', []))} related earlier goal(s)", "info"
+    if t == "reflex.matched":
+        return f"Reflex: {p.get('reflex', '?')} {p.get('label', '')} (no model needed)".strip(), "info"
     if t == "model.call":
         who = f"{p.get('provider', '?')} ({p.get('role', '?')})"
         if p.get("ok"):

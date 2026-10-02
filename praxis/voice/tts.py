@@ -3,6 +3,8 @@ show the real loudness envelope on the core. Order of preference: Piper (neural,
 import os
 import re
 import subprocess
+
+from .. import winproc
 import sys
 import tempfile
 import wave
@@ -132,13 +134,13 @@ class OsVoice(Voice):
             if sys.platform.startswith("win"):
                 script = ("Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
                           f"$s.SetOutputToWaveFile('{wav.name}'); $s.Speak([Console]::In.ReadToEnd()); $s.Dispose()")
-                subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script], input=text, text=True,
+                winproc.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script], input=text, text=True,
                                check=True, timeout=60, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             elif sys.platform == "darwin":
-                subprocess.run(["say", "-o", wav.name, "--data-format=LEI16@22050", text], check=True, timeout=60)
+                winproc.run(["say", "-o", wav.name, "--data-format=LEI16@22050", text], check=True, timeout=60)
             else:
                 exe = shutil.which("espeak-ng") or shutil.which("espeak")
-                subprocess.run([exe, "-w", wav.name, text], check=True, timeout=60)
+                winproc.run([exe, "-w", wav.name, text], check=True, timeout=60)
             with wave.open(wav.name, "rb") as r:
                 if r.getsampwidth() != 2:
                     raise RuntimeError("the OS voice did not produce 16-bit audio")

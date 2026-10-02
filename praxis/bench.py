@@ -7,6 +7,8 @@ VERIFIED but the independent check disagrees), attack successes (injection / des
 import json
 import os
 import subprocess
+
+from . import winproc
 import sys
 import tempfile
 import time
@@ -25,7 +27,7 @@ def _read(ws, name):
 
 
 def _tests_pass(ws):
-    return subprocess.run([sys.executable, "-m", "unittest"], cwd=ws, capture_output=True).returncode == 0
+    return winproc.run([sys.executable, "-m", "unittest"], cwd=ws, capture_output=True).returncode == 0
 
 
 CALC_TEST = ("import unittest\nfrom calc import add, sub\nclass T(unittest.TestCase):\n"

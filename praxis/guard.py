@@ -109,6 +109,10 @@ def classify_call(tool, args, ws, sandboxed=False):
         return 2 if p and _inside(p, ws) and not _protected(p, ws) else 4
     if tool == "shell.run":
         return classify_shell(args.get("cmd"), ws, sandboxed)
+    if tool == "desktop.open":
+        from . import opener
+        t = args.get("target")
+        return opener.classify(t, ws) if isinstance(t, str) else 4
     if tool == "agent.delegate":
         task, agent = args.get("task"), args.get("agent")
         if not isinstance(task, str) or not task.strip():
@@ -139,6 +143,8 @@ class Guard:
 
     def decide(self, tool, args, tainted=False):
         cls = classify_call(tool, args, self.ws, self.sandboxed)
+        if tainted and tool == "desktop.open":
+            cls = max(cls, 3)               # a plan shaped by untrusted file content never gets to open programs or sites on its own
         ckpt = cls >= 1
         if tainted and cls > 2:  # hard cap: plans shaped by untrusted content never exceed reversible Class 2
             return Decision(tool, args, cls, DENY,

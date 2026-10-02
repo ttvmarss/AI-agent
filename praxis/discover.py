@@ -7,6 +7,8 @@ from . import cache
 import os
 import shutil
 import subprocess
+
+from . import winproc
 import sys
 
 WIN = sys.platform.startswith("win")
@@ -55,7 +57,7 @@ def candidates(name, env=None, isdir=os.path.isdir, listdir=os.listdir, walk=os.
 def looks_like_devin_cli(path, run=None, timeout=20):
     """True only if the program documents `--print`: the command-line agent, not the editor launcher."""
     run_is_default = run is None
-    run = run or (lambda argv: subprocess.run(argv, capture_output=True, text=True, timeout=timeout, encoding="utf-8", errors="replace",
+    run = run or (lambda argv: winproc.run(argv, capture_output=True, text=True, timeout=timeout, encoding="utf-8", errors="replace",
                                               stdin=subprocess.DEVNULL))
     def ask():
         try:

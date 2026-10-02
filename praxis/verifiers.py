@@ -10,7 +10,7 @@ class Result:
     output: str = ""  # raw tool output (UNTRUSTED data); fed to replanners, never to the reason string
 
 
-def verify(spec, ws, command_gate=None):
+def verify(spec, ws, command_gate=None, processes=None):
     """spec: {"type": ..., ...}. Unknown verifier types FAIL (never silently pass).
 
     `command_gate(cmd) -> (allowed, reason)` is the Guard: verifier commands are actions like any other."""
@@ -55,6 +55,18 @@ def verify(spec, ws, command_gate=None):
             r = ws.shell_run(spec["cmd"], spec.get("timeout", 120))
             ok = r["returncode"] == 0 and r["output"].strip() == str(spec["text"]).strip()
             return Result(ok, f"command_output_equals {spec['cmd']} rc={r['returncode']}", r["output"][-1500:])
+        if t == "process_running":  # a program is really running now (polls up to `wait` seconds for it to appear)
+            if processes is None:
+                from .opener import Processes
+                processes = Processes()
+            names = spec["name"] if isinstance(spec["name"], (list, tuple)) else [spec["name"]]
+            wait = min(30.0, float(spec.get("wait", 10)))
+            end = processes.clock() + wait
+            hit = next((n for n in names if processes.running(n)), None)
+            while hit is None and processes.clock() < end:
+                processes.sleep(0.5)
+                hit = next((n for n in names if processes.running(n)), None)
+            return Result(hit is not None, f"process_running {hit or ' / '.join(map(str, names))}" + ("" if hit else " (not found)"))
         if t == "none":
             return Result(True, "no verifier required (read-only step)")
     except Exception as e:

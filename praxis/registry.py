@@ -4,6 +4,8 @@ import os
 import re
 import shutil
 import subprocess
+
+from . import winproc
 import time
 
 
@@ -41,7 +43,7 @@ def detect_memory_bytes():
     """Memory budget a local model may use: GPU VRAM if present, else a share of system RAM."""
     if shutil.which("nvidia-smi"):
         try:
-            out = subprocess.run(["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+            out = winproc.run(["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
                                  capture_output=True, text=True, timeout=10).stdout
             mib = sum(int(x) for x in out.split() if x.isdigit())
             if mib:

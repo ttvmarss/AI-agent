@@ -9,7 +9,7 @@ import threading
 import uuid
 from dataclasses import dataclass, field
 
-from . import proc
+from . import proc, reflex
 from .events import EventLog
 from .memory import Memory
 from .guard import ALLOW, DENY, ESCALATE, Decision, Guard
@@ -26,9 +26,9 @@ class Cancelled(Exception):
 SYSTEM = """You are the planner inside PRAXIS. Output ONLY a JSON object:
 {"steps":[{"id":str,"tool":str,"args":object,"verify":{"type":...},"deps":[ids]}],
  "success":[verifier,...]}
-Tools: fs.read{path} fs.list{path} fs.write{path,content} shell.run{cmd}.{delegate}
+Tools: fs.read{path} fs.list{path} fs.write{path,content} shell.run{cmd}.{delegate}{desktop}
 Verifiers: file_exists{path} file_absent{path} file_contains{path,text} file_equals{path,text} file_not_contains{path,text}
-command_ok{cmd} command_output_contains{cmd,text} command_output_equals{cmd,text} none.
+command_ok{cmd} command_output_contains{cmd,text} command_output_equals{cmd,text} process_running{name} none.
 Commands (shell.run AND verifiers) run with NO shell: no pipes, redirects (>), $(), &&, or globs; only a plain program with
 arguments such as `python3 hello.py` or `python3 -m unittest`; anything else is refused. To check what a program PRINTS use
 command_output_contains, never a redirect into a file. Prefer file_equals/file_contains for checking file content. "success" must contain at least one real check of the user's outcome.
@@ -114,13 +114,16 @@ class Executive:
     def __init__(self, workspace, log, router, approver=None, max_steps=20, max_model_calls=8,
                  max_replans=2, max_auto_class=2, agents=None, critic=True, max_cost_usd=None,
                  data_class="project", sandbox=None, memory=True, keep_checkpoints=10, max_checkpoint_mb=512,
-                 escalate=True, max_escalations=2):
+                 escalate=True, max_escalations=2, opener=None, reflexes=True):
         self.sandbox = sandbox
         self.ws = Workspace(workspace, sandbox)
         self.log, self.router, self.approver = log, router, approver
         self.guard = Guard(self.ws.root, max_auto_class, sandboxed=bool(sandbox and sandbox.strong))
         self.agents = {k: v for k, v in (agents or {}).items() if getattr(v, "can_delegate", False)}
-        self.tools = ToolRuntime(self.ws, self.agents)
+        from .opener import Opener
+        self.opener = opener or Opener(self.ws.root)
+        self.reflexes = reflexes
+        self.tools = ToolRuntime(self.ws, self.agents, self.opener)
         self.max_steps, self.max_model_calls, self.max_replans = max_steps, max_model_calls, max_replans
         self.critic, self.max_cost_usd, self.data_class = critic, max_cost_usd, data_class
         self.cost = 0.0
@@ -162,7 +165,7 @@ class Executive:
         names = ", ".join(sorted(self.agents))
         extra = (f"\nagent.delegate{{agent,task}} hands a coding task to one of: {names} "
                  "(each use needs human approval; prefer direct tools when sufficient).") if self.agents else ""
-        return SYSTEM.replace("{delegate}", extra)
+        return SYSTEM.replace("{delegate}", extra).replace("{desktop}", "\n" + self.opener.describe())
 
     # -- helpers ------------------------------------------------------------
     def _ev(self, goal, actor, type_, payload=None, parents=()):
@@ -264,6 +267,10 @@ class Executive:
                 "PRAXIS copies the folder before acting so it can undo everything: open a smaller project folder "
                 "or raise limits.max_checkpoint_mb."))
         calls = [0]
+        if self.reflexes:                                          # a plain request ("open chrome") needs no model: same Guard, same verification
+            rp = reflex.match(goal_text, self.opener)
+            if rp is not None:
+                return self._run_reflex(goal, intent, goal_text, rp)
         try:
             listing = self.ws.fs_list(".")
             history = ""
@@ -310,6 +317,18 @@ class Executive:
                 return self._finish(goal, ck, report)
             if self.router.last_provider:
                 tried.append(self.router.last_provider)
+
+    def _run_reflex(self, goal, intent, goal_text, rp):
+        label = rp.pop("label", "")
+        kind = rp.pop("reflex", "")
+        mid = self._ev(goal, "executive", "reflex.matched", {"reflex": kind, "label": label, "model_calls": 0}, [intent])
+        plan = parse_plan(json.dumps(rp))
+        plan_id = self._ev(goal, "executive", "plan.accepted", {"plan": plan, "initial": True, "tainted": False, "reflex": kind}, [mid])
+        self._check_cancel()
+        cid = self.ws.checkpoint()
+        ck = self._ev(goal, "executive", "checkpoint", {"id": cid}, [plan_id])
+        self._ctx.update(cid=cid, ck=ck)
+        return self._drive(goal, goal_text, plan, plan_id, cid, ck, [0], self.max_replans, False, hold=False)   # no model replans: it failed, say so
 
     def _critique(self, goal, goal_text, messages, plan, plan_id, calls, tainted=False):
         """A *different* model attacks the plan. Advisory: it can trigger one revision, never loosen the Guard."""
@@ -463,7 +482,7 @@ class Executive:
             if not ok:
                 return False, Report(FAILED, goal, f"step {step['id']} failed: {out}", evidence, steps_done=done,
                                      escalatable=True), observations
-            v = verify(step["verify"], self.ws, lambda c: self._gate(c, tainted))
+            v = verify(step["verify"], self.ws, lambda c: self._gate(c, tainted), self.opener.processes)
             self._ev(goal, "verifier", "verify.result",
                      {"step": step["id"], "claim": v.detail, "passed": v.passed}, [ri])
             evidence.append({"claim": v.detail, "passed": v.passed})
@@ -475,7 +494,7 @@ class Executive:
             done += 1
         real = [s for s in plan["success"] if s.get("type") != "none"]
         for spec in real:
-            v = verify(spec, self.ws, lambda c: self._gate(c, tainted))
+            v = verify(spec, self.ws, lambda c: self._gate(c, tainted), self.opener.processes)
             self._ev(goal, "verifier", "verify.result", {"claim": v.detail, "passed": v.passed}, [plan_id])
             evidence.append({"claim": v.detail, "passed": v.passed})
             if v.output:

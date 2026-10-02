@@ -6,6 +6,8 @@ import subprocess
 import sys
 import uuid
 
+from . import winproc
+
 # Never copied by checkpoints, never deleted by rollback, never listed: tool-managed or regenerable trees.
 _SKIP = {".praxis", ".git", "node_modules", ".venv", "venv", "__pycache__"}
 MAX_OUT = 20000
@@ -119,23 +121,35 @@ class Workspace:
             argv = self.sandbox.wrap(argv, self.root)
         elif argv and argv[0] in ("python", "python3"):
             argv[0] = sys.executable  # `python3` does not exist on most Windows machines
-        proc = subprocess.run(argv, cwd=self.root, capture_output=True, text=True,
+        proc = winproc.run(argv, cwd=self.root, capture_output=True, text=True,
                               encoding="utf-8", errors="replace", timeout=timeout, shell=False)
         out = (proc.stdout + proc.stderr)[-MAX_OUT:]
         return {"returncode": proc.returncode, "output": out}
 
 
 class ToolRuntime:
-    def __init__(self, workspace, agents=None):
+    def __init__(self, workspace, agents=None, opener=None):
+        from .opener import Opener
         self.ws = workspace
         self.agents = agents or {}
+        self.opener = opener or Opener(workspace.root)
         self.tools = {
             "fs.read": lambda a: self.ws.fs_read(a["path"]),
             "fs.list": lambda a: self.ws.fs_list(a.get("path", ".")),
             "fs.write": lambda a: self.ws.fs_write(a["path"], a["content"]),
             "shell.run": lambda a: self.ws.shell_run(a["cmd"], a.get("timeout", 60)),
+            "desktop.open": lambda a: self._open(a),
             "agent.delegate": self._delegate,
         }
+
+    def _open(self, a):
+        target = a.get("target")
+        if not isinstance(target, str) or not target.strip():
+            raise ToolError("desktop.open needs a target")
+        try:
+            return self.opener.open(target)
+        except OSError as e:
+            raise ToolError(f"could not open {target!r}: {e}")
 
     def _delegate(self, a):
         agent = self.agents.get(a.get("agent"))

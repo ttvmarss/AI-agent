@@ -12,6 +12,8 @@ import platform
 import re
 import shutil
 import subprocess
+
+from . import winproc
 import sys
 from dataclasses import dataclass, field
 from . import cache
@@ -117,7 +119,7 @@ def _cpu_name():
     if sys.platform.startswith("win"):
         def ask():
             try:  # the marketing name ("AMD Ryzen 7 7700 8-Core Processor"), not the family code platform.processor() gives
-                out = subprocess.run(["powershell", "-NoProfile", "-Command", "(Get-CimInstance Win32_Processor).Name"],
+                out = winproc.run(["powershell", "-NoProfile", "-Command", "(Get-CimInstance Win32_Processor).Name"],
                                      capture_output=True, text=True, timeout=15).stdout.strip()
                 return out.splitlines()[0].strip() if out else None
             except Exception:
@@ -134,7 +136,7 @@ def detect_hardware():
     if smi:
         def ask():
             try:
-                out = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
+                out = winproc.run(["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
                                      capture_output=True, text=True, timeout=15).stdout
                 return out if parse_nvidia_smi(out) else None
             except Exception:

@@ -12,6 +12,8 @@ import os
 import shlex
 import shutil
 import subprocess
+
+from . import winproc
 import sys
 import tempfile
 
@@ -83,7 +85,7 @@ def selftest(sb, python=None):
 
     def run(code):
         try:
-            p = subprocess.run(sb.wrap([py, "-c", code], ws), capture_output=True, text=True, timeout=90, cwd=ws)
+            p = winproc.run(sb.wrap([py, "-c", code], ws), capture_output=True, text=True, timeout=90, cwd=ws)
             return p.stdout.strip()
         except Exception as e:
             return f"ERR {type(e).__name__}"

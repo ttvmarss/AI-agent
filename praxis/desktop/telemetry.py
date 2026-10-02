@@ -4,6 +4,8 @@ import os
 import re
 import shutil
 import subprocess
+
+from .. import winproc
 import sys
 
 from ..hardware import _ram_bytes
@@ -84,7 +86,7 @@ class Telemetry:
         gpus = []
         if shutil.which("nvidia-smi"):
             try:
-                out = subprocess.run(["nvidia-smi", "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu",
+                out = winproc.run(["nvidia-smi", "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu",
                                       "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=4).stdout
                 gpus = parse_nvidia_usage(out)
             except Exception:

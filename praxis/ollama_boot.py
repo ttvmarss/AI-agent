@@ -11,6 +11,8 @@ import time
 import urllib.error
 import urllib.request
 
+from . import winproc
+
 LOCAL = ("127.0.0.1", "localhost", "[::1]", "::1")
 
 
@@ -49,7 +51,7 @@ def ensure(host="http://127.0.0.1:11434", vram_bytes=0, wait_s=6.0, which=shutil
     e = dict(env if env is not None else os.environ)
     for k, v in tuning(vram_bytes).items():
         e.setdefault(k, v)
-    kw = {"creationflags": 0x00000008 | 0x08000000} if sys.platform.startswith("win") else {"start_new_session": True}   # DETACHED_PROCESS | CREATE_NO_WINDOW
+    kw = winproc.hidden(detached=True)
     try:
         popen([exe, "serve"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=e, **kw)
     except Exception as ex:

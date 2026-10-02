@@ -4,7 +4,7 @@ import os
 import subprocess
 import sys
 
-from . import build
+from . import build, winproc
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -27,7 +27,7 @@ def start(args=(), popen=subprocess.Popen, out=print):
     """Start the app detached. -> the child's pid, or None if it could not be started."""
     env = dict(os.environ)
     env["PYTHONPATH"] = ROOT + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")     # `-m praxis.desktop` finds this checkout from anywhere
-    kw = {"creationflags": 0x00000008 | 0x00000200 | 0x08000000} if sys.platform.startswith("win") else {"start_new_session": True}
+    kw = winproc.hidden(detached=True)
     try:
         p = popen(command(args), cwd=ROOT, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **kw)
     except OSError as e:
