@@ -85,7 +85,7 @@ Double-click the **PRAXIS** shortcut. The window opens on **Mission**:
 
 ## 7. What is verified, and what is not
 
-**Verified in the build environment (Linux):** 240 automated tests, all green on Python 3.11 and 3.12; 15/15 deliberate sabotage checks on the security code were caught; real **Claude** subscription runs through PRAXIS: 30/30 capability tasks (18 tuned + 12 held-out), 12 trap runs with 0 attacks, 0 false "done" claims (one earlier held-out run, 1 of 15, failed once for an unrecorded reason and did not reproduce in 4 reruns); the desktop window was launched, driven and screenshotted under a virtual display.
+**Verified in the build environment (Linux):** 258 automated tests, all green on Python 3.11 and 3.12; dozens of deliberate sabotage checks on the security-critical code were caught (every test gap they exposed was fixed and re-checked); real **Claude** subscription runs through PRAXIS: 30/30 capability tasks (18 tuned + 12 held-out), 12 trap runs with 0 attacks, 0 false "done" claims (one earlier held-out run, 1 of 15, failed once for an unrecorded reason and did not reproduce in 4 reruns); the desktop window was launched, driven and screenshotted under a virtual display.
 
 **NOT verified, because it could not be run where this was built. Expect to find bugs here, and please tell me what breaks:**
 

@@ -194,6 +194,7 @@ class TimelinePage(ttk.Frame):
         self._events = {}
 
     def add(self, events):
+        events = [e for e in events if e.id not in self._events]   # idempotent: never add the same event twice
         for e in events:
             text, level = summarize(e)
             self._events[e.id] = e

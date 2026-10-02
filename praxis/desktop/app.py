@@ -187,14 +187,13 @@ class App:
 
     def _update(self):
         c = self.controller
-        u = c.poll() if c.state != "starting" else None
         state = c.state
         if state in ("idle", "working", "stopping") and self._loaded_ws != c.workspace:
-            self._on_ready()  # tied to "stack is built", NOT to idle: a goal may already be running
-            u = c.poll()
+            self._on_ready()  # BEFORE the first poll (a poll consumes events); tied to "stack built", not to idle
+        u = c.poll() if state not in ("starting", "error") else None
         if u is not None:
+            self.mission.append_events(u.events)   # independent of each other: one failing must not starve the other
             self.timeline.add(u.events)
-            self.mission.append_events(u.events)
             self.mission.show_view(u.view, state)
             self.cost.configure(text=f"${u.view.cost:.3f}")
             for req in u.approvals:

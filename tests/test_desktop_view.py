@@ -83,6 +83,16 @@ class View(unittest.TestCase):
         log.append("g", "guard", "guard.decision", {"step": "s1", "class": 3, "verdict": "ESCALATE", "reason": "x"}, [s])
         self.assertEqual(build_view(log.all()).status, "WAITING FOR YOU")
 
+    def test_hard_deny_verdict_shows_as_denied(self):
+        """The Guard's DENY verdict (e.g. a plan capped by untrusted content), distinct from a human refusing an ESCALATE."""
+        log = EventLog()
+        i = log.append("g", "user", "goal.intent", {"text": "t"})
+        a = log.append("g", "executive", "plan.accepted", {"plan": {"steps": [{"id": "s1", "tool": "shell.run", "args": {"cmd": "curl x"}, "deps": [], "verify": {"type": "none"}}], "success": []}, "initial": True, "tainted": True}, [i])
+        s = log.append("g", "executive", "step.intent", {"step": "s1", "tool": "shell.run", "args": {}}, [a])
+        log.append("g", "guard", "guard.decision", {"step": "s1", "class": 3, "verdict": "DENY", "reason": "capped"}, [s])
+        v = build_view(log.all())
+        self.assertEqual(v.steps[0].state, "denied"); self.assertTrue(v.tainted)
+
     def test_empty_log(self):
         v = build_view([]); self.assertEqual(v.status, "IDLE"); self.assertEqual(v.steps, [])
 

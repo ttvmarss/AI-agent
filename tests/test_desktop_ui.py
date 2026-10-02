@@ -79,6 +79,53 @@ class UI(unittest.TestCase):
         self.assertTrue(pump(app, lambda: app.pill.cget("text") == "READY"))
         self.assertEqual(app.mission.run_btn.instate(["disabled"]), False)               # ready for the next goal
 
+    def test_goal_started_before_the_first_tick_still_streams_its_events(self):
+        """Regression for the 'history snapshot swallows the first goal' race, WITHOUT run_goal's own snapshot masking it."""
+        try:
+            root = tk.Tk()
+        except tk.TclError as e:
+            self.skipTest(f"no display: {e}")
+        ws, home = tempfile.mkdtemp(), tempfile.mkdtemp()
+        ctl = Controller(ws, stack_factory=lambda w: fake_stack([GOOD]), home=home); ctl.start()
+        app = App(ctl, FakeTelemetry(), root=root)
+        self.addCleanup(lambda: root.destroy() if root.winfo_exists() else None)
+        end = time.time() + 5
+        while ctl.state != "idle" and time.time() < end:      # wait WITHOUT letting the UI tick even once
+            time.sleep(0.01)
+        self.assertTrue(ctl.submit("make a.txt"))             # a goal begins before any _on_ready ran
+        self.assertTrue(pump(app, lambda: app.mission.status.cget("text") == "VERIFIED"))
+        feed = app.mission.activity.get("1.0", "end")
+        self.assertIn("Plan accepted", feed); self.assertIn("PASS", feed)
+
+    def test_goal_still_running_at_the_first_tick_streams_each_event_exactly_once(self):
+        try:
+            root = tk.Tk()
+        except tk.TclError as e:
+            self.skipTest(f"no display: {e}")
+        gate = threading.Event()
+        ws, home = tempfile.mkdtemp(), tempfile.mkdtemp()
+        ctl = Controller(ws, stack_factory=lambda w: fake_stack([GOOD], hook=lambda: gate.wait(10)), home=home); ctl.start()
+        app = App(ctl, FakeTelemetry(), root=root)
+        self.addCleanup(lambda: (gate.set(), root.destroy()) if root.winfo_exists() else None)
+        end = time.time() + 5
+        while ctl.state != "idle" and time.time() < end:
+            time.sleep(0.01)
+        self.assertTrue(ctl.submit("make a.txt"))            # the goal is still RUNNING (blocked in the model) at the first tick
+        pump(app, lambda: False, 0.5)                          # several ticks while it runs
+        gate.set()
+        self.assertTrue(pump(app, lambda: app.mission.status.cget("text") == "VERIFIED"))
+        pump(app, lambda: False, 0.5)
+        feed = app.mission.activity.get("1.0", "end")
+        self.assertEqual(feed.count("Goal: make a.txt"), 1)    # not re-delivered after the history snapshot
+        self.assertEqual(feed.count("Plan accepted"), 1)
+
+    def test_timeline_add_is_idempotent(self):
+        app, ctl, ws = self.make([GOOD]); self.goal(app, "x")
+        pump(app, lambda: app.mission.status.cget("text") == "VERIFIED")
+        events = ctl.all_events(); n = len(app.timeline.tree.get_children())
+        app.timeline.add(events)                      # same events again must be a no-op, not a duplicate-row crash
+        self.assertEqual(len(app.timeline.tree.get_children()), n)
+
     def test_empty_objective_is_refused_politely(self):
         app, ctl, ws = self.make([GOOD])
         app.mission.objective.delete("1.0", "end"); app.run_goal()

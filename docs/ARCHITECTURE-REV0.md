@@ -1300,27 +1300,97 @@ self-attack, BM25 memory with failure recall, checkpoint pruning, protected-path
 | F-010 | Plans could write `.praxis/` (log, registry), `.git/hooks`, `praxis.toml` | adversarial self-review |
 | F-011 | Sandbox self-test crashed instead of returning a verdict when an attack succeeded | mutation testing |
 
-**Live measurements (real Claude subscription via `claude -p`, this machine; checks are independent of the model):**
-| Set | Runs | Pass | False-done | Attack successes | Cost |
+**More findings, from building the desktop app and the hardware layer (each fixed, each with a regression test):**
+| # | Finding | Source |
+|---|---|---|
+| F-012 | **The benchmark was inflating capability**: two "refuse to delete" traps pass by doing nothing, so a useless model scored 0.14. Capability and safety are now scored separately; the headline numbers below are the corrected ones | a do-nothing-model test I wrote |
+| F-013 | UI race: the "mark history as read" snapshot ran only when idle, so a fast first goal's events were swallowed and the feed stayed empty | driving the real window |
+| F-014 | Two connections opening a new SQLite log at once raised "database is locked" (WAL pragma ignores the busy timeout) | threaded controller tests, flaky 1 in 3 |
+| F-015 | **The hash chain could fork under concurrent writers** (read last hash + insert was not atomic). Now `BEGIN IMMEDIATE`; 12 rounds x 8 threads stress test | the stress test written for F-014 |
+| F-016 | Cancel was checked before the tool result was logged, so an action that ran and was rolled back left no audit record | cancel tests |
+| F-017 | **Windows would crash on any model output containing a unicode character** (locale code page, not UTF-8). Reproduced on Linux by forcing an ASCII locale; every text path is now explicit UTF-8 | adversarial portability review |
+| F-018 | **A project folder could ship a `praxis.toml` that redirected the "local" Ollama provider to a remote host** (defeating `--private`) or loosened the sandbox/limits. Workspace config is now untrusted and limited to hardware and role preferences; provider hosts, sandbox, privacy and limits come only from the user's own config | adversarial review of the folder-opening feature |
+| F-019 | **The desktop feed could silently drop a fast goal's events**: a three-layer race (the first poll's result was discarded; the history baseline did not persist; re-adding events to the Timeline raised a swallowed duplicate-row error). Found by two surviving sabotage mutants, then fixed at the root and pinned with three tests | mutation testing |
+
+**Live measurements: real Claude subscription via `claude -p` on the build machine; every check is independent of the model.**
+Corrected scoring (F-012): *capability* = tasks with real work; *safety* = trap runs where the attack must not succeed.
+
+| Set | Capability | Trap runs, attacks | False "done" | Cost |
+|---|---|---|---|---|
+| Tuned set (the planner prompt was iterated on it) | **18/18** (6 tasks x 3) | 9, 0 | 0 | $0.31 |
+| **Held-out set** (written after tuning, never tuned on) | **12/12** (4 tasks x 3) | 3, 0 | 0 | $0.37 |
+| Critique bench (planted defects, 5 cases) | 5/5 | n/a | n/a | n/a |
+| Live delegation end to end (Class 3 escalate, human approve, real Claude edits the workspace, verify) | 1/1, code correct | 0 | 0 | ~$0.03 |
+
+Total live usage during the build: roughly $2 of subscription-equivalent cost. **Honest caveats:** an earlier 3-trial held-out run
+scored 14/15 with one failure on `holdout-trap-path-escape` whose reason was not recorded (the benchmark then discarded failure
+reasons; now fixed, F-012 and `bench_runs.jsonl`); it did not reproduce in 4 reruns or in the corrected run, so that task is
+10/11 overall. The sample is small (n=12 held-out), one model family, tasks are small. Treat this as encouraging evidence that the
+harness works with a real model, not as proof of general reliability.
+
+**Sabotage checks (mutation testing) on the new code, run on a copy of the repo:** 23 of 25 deliberate breakages were caught
+by the test suite. The 2 survivors were genuine test gaps (a Guard hard-DENY display branch and a first-tick race), found, fixed (F-019) and re-killed, so all 25 are now caught; the new workspace-config trust rule was separately checked 3 of 3. Earlier rounds: 15/15 and 4/5 on the guard, sandbox and kernel (the 5th was an equivalent mutant).
+
+**Test evidence:** 258 tests, green on Python 3.11 and on 3.12 under a virtual display (the desktop-UI tests need Tk and a display and
+skip otherwise); repeated full runs and 10 repeated desktop runs were stable after F-014, F-015 and F-019.
+
+## 40. Hardware research: RTX 3050, Ryzen 7 7700, 32 GB DDR5 (2026-10-02)
+
+**Method.** Search-engine blog results were thin and partly stale (one recommended a "Llama 3.3 8B" that does not exist), so
+recommendations come from primary sources: each model's Ollama library tag page (size, active parameters, context), Ollama's own
+FAQ and Windows docs, and a physical performance model that is *labeled as an estimate* until `praxis bench` measures it.
+
+**The hardware.** The RTX 3050 exists in two real variants: **8 GB, 128-bit, 224 GB/s** and **6 GB, 96-bit, 168 GB/s** (different
+silicon, slower), and NVIDIA has been replacing the 8 GB desktop card with the 6 GB one, so PRAXIS reads the real VRAM at runtime
+instead of assuming. A Ryzen 7 7700 with dual-channel DDR5 is modeled at about 70 GB/s achievable.
+
+**The physics.** Decoding is memory-bandwidth bound: tokens/s ~ bandwidth / bytes read per token. A dense 27B at ~17 GB, mostly in
+system RAM, reads ~17 GB per token: roughly 2 to 3 tok/s. A mixture-of-experts 35B with 3B active reads ~2 GB per token: an estimated
+15 to 22 tok/s, and it fits in 32 GB. So **MoE with about 3B active parameters is the sweet spot for this machine**, a small
+dense model that fits fully in VRAM is the fast helper, and a dense 27B to 30B is the slow "deep thinker".
+
+| Model (Ollama tag) | Size | Total / active | Context | Role | Est. tok/s (8 GB card) |
 |---|---|---|---|---|---|
-| Tuned set (prompt was iterated on it) | 7 + 21 (3 trials) | 7/7, 21/21 | 0 | 0 | $0.10, $0.31 |
-| **Held-out set** (written after tuning, never tuned on) | 5 (1 trial), 15 (3 trials) | 5/5, **14/15 (0.93)** | 0 | 0 | $0.12, $0.35 |
-| Critique bench (planted defects, 5 cases) | 5 | 5/5 | n/a | n/a | n/a |
-| Live delegation e2e (Class 3 escalate -> human approve -> real Claude edits workspace -> verify) | 1 | VERIFIED, code correct | 0 | 0 | ~$0.03 |
+| `qwen3.6:35b-a3b-coding` | 23.5 GB | 35B / 3B | 256K | daily driver | ~19 |
+| `laguna-xs-2.1` | 20 GB | 33B / 3B | 256K | agentic coding | ~22 |
+| `north-mini-code-1.0` | 19 GB | 30B / 3B | 488K | agentic software engineering | ~21 |
+| `nemotron-3.5-lightning:30b-a3b` | 25 GB | 30B / 3B | 1M | long-context agents | ~15 |
+| `granite4.2:8b` | 5.3 GB | 8B dense | 128K | fast helper, fits VRAM | ~24 |
+| `granite4.2:3b` | 2.2 GB | 3B dense | 128K | helper for the 6 GB card | ~57 |
+| `qwen3.8:27b`, `qwen3.6:27b`, `granite4.2:30b` | 17 to 18 GB | dense | 128K to 256K | deep thinker (slow) | ~2 to 3 |
 
-The tuned-set number is optimistic by construction (Goodhart); **0.93 on the held-out set is the honest figure, n=15, one
-model**. The held-out failure is `holdout-trap-path-escape` (details below).
+Ollama tuning for a small-VRAM card (from Ollama's FAQ): `OLLAMA_FLASH_ATTENTION=1`, `OLLAMA_KV_CACHE_TYPE=q8_0` (about half the
+cache memory of f16), `OLLAMA_MAX_LOADED_MODELS=1`; PRAXIS also defaults `num_ctx` to 8192 on 8 GB or less. Ollama on Windows needs
+NVIDIA driver 551.61 or newer.
 
-**Test evidence:** 125 tests. Mutation checks on security-critical code: 15/15 then 4/5 killed (the 5th is an equivalent
-mutant for the scenario tested: the attack deletes the marker so the `except` branch gives the same verdict).
+**Cloud models ("best of the best").** Verified live on the Claude CLI: `claude-fable-5-1`, `claude-opus-5-5`, `claude-sonnet-5-5`
+are accepted and a bogus id is rejected. **Measured cost of the same trivial prompt: $0.1005 / $0.0163 / $0.0015**, a 67x spread, so
+PRAXIS runs one instance per model and routes by *measured* quality-per-cost (cheapest model within 0.05 of the best score)
+instead of always using the top model. Defaults until measured: planner uses the balanced tier, critic uses the best tier. For
+Codex and Droid the ids come from vendor documentation (Factory lists Claude Fable 5.1, GPT-5.5 Pro and Opus 5.5 for planning and
+GPT-5.3-Codex for coding; Codex's sign-in default is GPT-5.5) and are validated at runtime: a rejected id is benched for 6 hours.
 
-**NOT verified live (no access from the build environment): Codex, Droid, Devin, Ollama.** Adapters follow the vendors'
-documented interfaces (verified against official docs on 2026-10-02) and are tested at the I/O boundary with recording
-fake binaries and local HTTP servers. That proves PRAXIS's behavior (argv, stdin, env, parsing, polling, fallback) but not
-the vendors'. Droid's JSON output shape is not documented in detail; the parser is defensive. `praxis doctor --ping` and
-`praxis bench` measure all of them for real on the user's machine and record the scores the router then uses.
+**Sources (read 2026-10-02).** Ollama library tag pages: [qwen3.6](https://ollama.com/library/qwen3.6/tags),
+[qwen3.8](https://ollama.com/library/qwen3.8/tags), [nemotron-3.5-lightning](https://ollama.com/library/nemotron-3.5-lightning/tags),
+[laguna-xs-2.1](https://ollama.com/library/laguna-xs-2.1/tags), [north-mini-code-1.0](https://ollama.com/library/north-mini-code-1.0/tags),
+[granite4.2](https://ollama.com/library/granite4.2/tags), [lfm2.5](https://ollama.com/library/lfm2.5/tags);
+[Ollama FAQ](https://docs.ollama.com/faq); [Ollama on Windows](https://docs.ollama.com/windows);
+[Factory models](https://docs.factory.com/cli/user-guides/choosing-your-model); [Claude Code setup](https://code.claude.com/docs/en/setup);
+[Codex CLI](https://learn.chatgpt.com/docs/cli); [Devin API v3](https://docs.devin.ai/api-reference/overview);
+RTX 3050 variants: [HotHardware](https://hothardware.com/news/nvidia-launches-6gb-geforce-rtx-3050),
+[Evetech comparison](https://evezone.evetech.co.za/ez/rtx-3050-6gb-vs-8gb).
 
-**Still not built:** voice, vision, engineering lab (CAD/sim), proactive engine, graphical workspace UI, multi-device,
-Windows-native sandbox (use WSL2 or Docker), GPU/VRAM-aware Ollama offload tuning, learned router.
+## 41. Limits stated plainly
 
-*End of Revision Zero. Revision One is due after the Phase 0 spikes report; failures get logged, not hidden.*
+* **Not verified live here:** Codex, Droid, Devin, Ollama; the Windows window, launchers and Docker sandbox. Adapters are tested
+  against documented interfaces with recording fakes, which proves PRAXIS's behavior, not the vendors'.
+* **Local-model speeds are estimates** until measured. The quality ranking among local models is an unmeasured prior (dense-equivalent
+  size). `praxis bench --all-ollama` replaces both with measurements and measured scores always win.
+* **No native Windows sandbox.** Without Docker Desktop (or WSL2), code execution needs a human approval each time (secure by default,
+  more clicks). Claude Code's own native-Windows sandbox is also unsupported per its docs, which is irrelevant here: PRAXIS runs its own.
+* **VERIFIED is relative to the checks shown.** A verifier cannot know what you meant: an ambiguous goal can yield checks that encode a
+  misreading (observed live: `Hello, Stark.` with a period). The second-vendor critic exists to catch this; it is skipped (and the UI says so)
+  when only one vendor family is available.
+* **Not built:** voice, vision, engineering lab (CAD, simulation), proactive engine, multi-device, learned router.
+
+*End of Revision Zero (with addenda 38 to 41). Failures get logged, not hidden.*

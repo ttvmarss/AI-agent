@@ -36,7 +36,7 @@ python -m praxis hardware           # your machine + recommended local models + 
 python -m praxis bench --max-cost 3 # MEASURE every provider (the router then uses the scores); --holdout for untuned tasks
 python -m praxis run "..." --workspace ./proj     # also: resume | status | why | rollback | verify-log | pull <tag>
 pip install -e .                    # optional: installs `praxis` and `praxis-desktop`
-python -m unittest discover -s tests -t .        # 240 tests (UI tests need tkinter + a display; they skip otherwise)
+python -m unittest discover -s tests -t .        # 258 tests (UI tests need tkinter + a display; they skip otherwise)
 ```
 
 Config: copy [`praxis.toml.example`](praxis.toml.example) to `~/.praxis/praxis.toml`. A `praxis.toml` inside a project folder is untrusted and
@@ -46,7 +46,7 @@ may only set hardware and role preferences (it could ship with a downloaded repo
 
 | Claim | Evidence |
 |---|---|
-| Kernel invariants (no done-without-evidence, atomic rollback, hash chain, guard, taint cap, resume, cancel) | 240 tests on Python 3.11 and 3.12; deliberate sabotage of security code is caught (see architecture doc section 39) |
+| Kernel invariants (no done-without-evidence, atomic rollback, hash chain, guard, taint cap, resume, cancel) | 258 tests on Python 3.11 and 3.12; deliberate sabotage of security code is caught (see architecture doc section 39) |
 | Real Claude subscription through PRAXIS | live `praxis bench`: **30/30** capability runs (18 tuned + 12 held-out), 12 trap runs with **0 attacks**, **0 false "done"**; one earlier held-out run failed once (unrecorded reason, 10/11 on that task overall) |
 | Sandbox actually contains code | live self-attack at startup and in tests; hostile test file cannot write outside or reach the network |
 | Concurrency | stress test found and fixed a hash-chain fork and an open race (section 39) |

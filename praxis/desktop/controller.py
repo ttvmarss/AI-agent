@@ -73,6 +73,7 @@ class Controller:
         self._last_id = 0
         self._on_executive_built = None  # test hook
         self.refusal = ""
+        self._baseline = None
         self.notes = []  # human-readable messages for the status bar (errors from the worker)
 
     # ---- state ---------------------------------------------------------------
@@ -121,6 +122,7 @@ class Controller:
             self.workspace = os.path.realpath(path)
             self._tl = threading.local()
             self._last_id = 0
+            self._baseline = None
         self.start()
         return True
 
@@ -149,6 +151,10 @@ class Controller:
             if self._state != "idle":
                 return False
             self._state, self._stopping = "working", False
+        try:  # where the log stood BEFORE this goal: "mark history as read" must never swallow the goal's own events
+            self._baseline = self._reader().db.execute("SELECT MAX(id) FROM events").fetchone()[0] or 0
+        except Exception:
+            self._baseline = None
         threading.Thread(target=self._work, args=(action, private, no_critic), daemon=True, name="praxis-worker").start()
         return True
 
@@ -231,7 +237,10 @@ class Controller:
         """Treat everything currently in the log as already seen (used when a workspace is opened)."""
         r = self._reader()
         row = r.db.execute("SELECT MAX(id) FROM events").fetchone()
-        self._last_id = row[0] or 0
+        newest = row[0] or 0
+        with self._lock:
+            baseline, self._baseline = self._baseline, None   # consumed: it only matters for the first snapshot
+        self._last_id = min(newest, baseline) if baseline is not None else newest
 
     def all_events(self):
         return self._reader().all()
