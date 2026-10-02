@@ -1489,4 +1489,45 @@ Windows (offscreen on Linux, screenshots reviewed); the local-model additions' s
 third-party LiveCodeBench figures where available, labelled as secondary evidence, and is replaced by `praxis bench --all-ollama`);
 *(community)* limits for NVIDIA NIM and OpenRouter. A free tier's numbers can change at any time: a provider's 429 always wins.
 
-*End of Revision Zero (with addenda 38 to 42). Failures get logged, not hidden.*
+## 43. Status addendum — PRAXIS talks (2026-10-02)
+
+**Requirement (from the owner):** no chat box, no mic button; speak to it and it speaks back, automatically, flawlessly; "test it the way
+Tony Stark would, and fix what he doesn't like right away."
+
+**43.1 Design.** `praxis/voice/` is a self-contained package; the window only hosts it. Always-on microphone -> energy VAD with an
+adaptive noise floor (`audio.Segmenter`) -> faster-whisper `base.en` (CPU int8, with a decoder vocabulary hint and a hallucination
+filter) -> **Conductor** (a plain state machine, fully tested without audio) -> the real `Controller`; narrated events and answers ->
+Piper neural voice (`en_GB-alan-medium`; OS voice as fallback) -> speaker. Everything is local. The window shows the state in the core
+itself: a circular oscilloscope of the *real* audio (yours while it listens, its own while it speaks), the seed flaring with its voice, a
+state tag (LISTENING / HEARING / THINKING / SPEAKING / MUTED), and the words it heard as the caption so a mishearing is visible.
+**Safety rules (each has tests and was sabotage-tested):** nothing is acted on without the wake word (except answers during an
+approval, STOP and a short follow-up window); the microphone is deaf while it speaks plus 0.55 s (it never answers itself); approvals
+are read out in full; a bare "yes" is accepted only for mild actions, risky (Class 4+) ones need the word "approve"; silence for 60 s
+denies; while an approval is pending nothing else can become a goal (only mute is always allowed); a stray "approve" with nothing
+pending is answered, never run as a goal; the typing line appears only if voice cannot start, and then says why.
+
+**43.2 The Tony Stark test and what it found.** Real speech (Piper voice, resampled) was fed into the real Whisper, the real Conductor,
+the real window and controller (scripted providers), with the room's echo looped from the speaker back into the microphone.
+Defects found, each fixed and given a regression test:
+* *"approve" was heard as "prove" / "Prue"* by Whisper `base.en`, so a spoken approval silently failed. Fixed by giving the decoder the
+  vocabulary ("Praxis, approve, deny, stop, status") and accepting those near-misses **only** during an approval or as a stray answer.
+* *"Praxis, approve" with nothing pending was answered "Sorry, I didn't catch that."* Now: "Nothing is waiting for your approval."
+* *"Praxis, mute" during an approval was ignored.* Mute is now always allowed (and does not answer the approval).
+* *The approval prompt was spoken before "Plan ready"* because the two travel by different paths; the prompt now waits 0.8 s so earlier
+  events are said first.
+* *My own harness* (not the product) blocked on the approval dialog's modal loop and talked over PRAXIS: the live script now runs on a
+  thread, and I recorded what that showed: speech spoken *while* PRAXIS is talking is dropped (half duplex, by design; see limits).
+* Clean results: with the room's echo looped back, PRAXIS never heard itself (0 self-heard lines); speech without the wake word did
+  nothing; a bare "yes" did not approve a risky action; "approve" did (the dialog was shown while it waited); STOP and mute worked.
+* Measured here (CPU only): from the end of an utterance (my test adds 1.2 s of silence) to the recognised text took about 1 to 3 s
+  for 2 to 5 s of speech; a narrated event started speaking within about 0.1 s of being logged. Memory use was not measured.
+* Mutation round: 4 mutants of the safety rules (deafness while speaking, bare yes on risky, wake word bypass, approval timeout), 4 killed.
+
+**43.3 Not proven here.** There is no microphone, speaker or Windows in this environment: capture (`SdMic`) and playback (`SdSpeaker`)
+were never run against hardware, nor was the Windows SAPI fallback. Speech input was synthetic (one clear British voice); accents,
+noise, music and far-field speech are untested, and `base.en` will mishear some of them (the caption shows what it heard; use
+`small.en` for accuracy). There is no barge-in: you cannot interrupt it by talking over it (without echo cancellation the speaker would
+trigger it); say "Praxis, stop" after it finishes, press Esc, or use headphones and keep answers short. Speakers close to the microphone
+can still defeat the 0.55 s deaf tail in a very reverberant room.
+
+*End of Revision Zero (with addenda 38 to 43). Failures get logged, not hidden.*

@@ -44,7 +44,7 @@ class Intent:
 
 STOP = re.compile(r"^(stop|abort|halt|cancel|kill it|never ?mind|stop (that|it|everything|now)|cancel (that|it|everything))\b")
 DENY = re.compile(r"^(deny|denied|no|nope|negative|reject|decline|don't|do not|dont|absolutely not|no way)\b|\b(do not|don't|dont|not) approve\b")
-APPROVE = re.compile(r"^(i )?(approve|approved)\b|^(yes |yeah |ok |okay )?approve\b")
+APPROVE = re.compile(r"^(i )?(approve|approved|prove|proved|prue)\b|^(yes |yeah |ok |okay )?(approve|prove|prue)\b")
 YES = re.compile(r"^(yes|yeah|yep|yup|sure|go ahead|do it|okay|ok|proceed|confirmed?)\b")
 STATUS = re.compile(r"\b(status|what('s| is) (going on|happening|the status)|how('s| is) it going|are you (done|there|finished|working)|report|progress)\b")
 RESUME = re.compile(r"^resume\b")
@@ -66,11 +66,15 @@ def parse(rest, *, busy=False, approving=False, risky=False):
             return Intent("approve")
         if YES.match(t):
             return Intent("confirm_risky" if risky else "approve")
+        if MUTE.match(t):
+            return Intent("mute")                    # the one thing that is always allowed, even mid-approval
         if STATUS.search(t):
             return Intent("status")
         return Intent("unknown")                 # while an approval is pending, nothing else is allowed to become a goal
     if STOP.match(t):
         return Intent("stop")
+    if len(t.split()) <= 2 and (APPROVE.match(t) or DENY.match(t) or YES.match(t)):
+        return Intent("stray_answer")            # an answer to a question nobody asked: never a goal
     if MUTE.match(t):
         return Intent("mute")
     if RESUME.match(t):

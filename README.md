@@ -46,6 +46,16 @@ goal -> recall (memory) -> plan (model A) -> observe files (labeled UNTRUSTED) -
   frugality, **Ctrl+O** opens a folder, **Ctrl+R** resumes. Approval dialogs show the exact action and default to Deny. It lowers
   its own detail on slow machines and honours `PRAXIS_REDUCE_MOTION=1`. (Without PySide6 a plainer Tk fallback window opens.)
 
+## Talk to it
+
+No chat box, no mic button: the window is just the Loom. With the voice extra installed it listens all the time (locally: Whisper for
+ears, Piper for its voice) and acts only when you say its name first. *"Praxis, create a file called hello.txt that says hello"* → it
+repeats what it understood, plans, does, verifies, and tells you the result in one sentence. After it speaks you have ~10 s to follow
+up without the name. *"Praxis, stop"* cancels at once. *"Praxis, status"*, *"frugal / balanced / quality"*, *"private / project / open"*,
+*"resume"* and *"mute"* (F4 turns listening back on) work too. **Approvals are spoken in full and need an answer: a plain "yes" is
+enough only for mild actions; anything risky needs the word "approve"; silence is a denial.** If a microphone or model is missing it says
+why on screen and shows a one-line typing field instead. The microphone is deaf while it speaks, so it never answers itself.
+
 ## Run
 
 ```
@@ -55,8 +65,8 @@ python -m praxis free               # the free cloud tiers: limits, data terms, 
 python -m praxis hardware           # your machine + recommended local models + Ollama tuning
 python -m praxis bench --max-cost 3 # MEASURE every provider (the router then uses the scores); --holdout for untuned tasks
 python -m praxis run "..." --workspace ./proj     # also: resume | status | why | rollback | verify-log | pull <tag>
-pip install -e ".[ui]"              # optional: `praxis`, `praxis-desktop` and the PySide6 command-center window
-python -m unittest discover -s tests -t .        # 448 tests (UI tests need PySide6 / tkinter; they skip otherwise)
+pip install -e ".[ui,voice]"         # optional: `praxis`, `praxis-desktop`, the PySide6 window, and hands-free voice
+python -m unittest discover -s tests -t .        # 493 tests (UI tests need PySide6 / tkinter; they skip otherwise)
 ```
 
 Config: copy [`praxis.toml.example`](praxis.toml.example) to `~/.praxis/praxis.toml`. A `praxis.toml` inside a project folder is untrusted and

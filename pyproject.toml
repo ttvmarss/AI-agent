@@ -11,6 +11,7 @@ requires-python = ">=3.11"
 dependencies = []   # standard library only, by design
 
 [project.optional-dependencies]
+voice = ["faster-whisper>=1.0", "piper-tts>=1.2", "sounddevice>=0.4"]   # hands-free: speak to it, it speaks back (all local)
 ui = ["PySide6-Essentials>=6.7"]   # the command-center window; without it PRAXIS falls back to a basic Tk window
 
 [project.scripts]
@@ -20,4 +21,4 @@ praxis = "praxis.__main__:main"
 praxis-desktop = "praxis.desktop.__main__:main"   # pip creates praxis-desktop.exe on Windows (no console window)
 
 [tool.setuptools]
-packages = ["praxis", "praxis.desktop", "praxis.desktop.qt"]
+packages = ["praxis", "praxis.desktop", "praxis.desktop.qt", "praxis.voice"]

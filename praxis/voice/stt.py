@@ -7,6 +7,10 @@ HALLUCINATIONS = {"thank you", "thanks for watching", "thank you for watching", 
                   "thanks", "the end", "so", "oh", "uh", "um", "hmm"}
 
 
+# A hint for the decoder: the words this system listens for, so "approve" is not heard as "prove".
+VOCAB = "Praxis. Praxis, approve. Praxis, deny. Praxis, stop. Praxis, status. Approve. Deny."
+
+
 class Recognizer:
     def transcribe(self, pcm16):          # 16 kHz mono int16 bytes -> text ("" if nothing credible was said)
         raise NotImplementedError
@@ -39,7 +43,8 @@ class WhisperRecognizer(Recognizer):
         a = array.array("h"); a.frombytes(pcm16[: len(pcm16) // 2 * 2])
         audio = np.frombuffer(a.tobytes(), dtype=np.int16).astype(np.float32) / 32768.0
         segs, _ = self.load().transcribe(audio, language="en", beam_size=1, vad_filter=False, condition_on_previous_text=False,
-                                         without_timestamps=True, temperature=0.0)
+                                         without_timestamps=True, temperature=0.0,
+                                         initial_prompt=VOCAB)
         parts = []
         for s in segs:
             if s.no_speech_prob > 0.6 or s.avg_logprob < -1.1:      # not credible speech

@@ -268,6 +268,8 @@ class Rules(unittest.TestCase):
     # ---- approvals: the safety-critical part --------------------------------------------------------------------------------
     def test_a_new_approval_is_read_out_in_full_and_opens_an_answer_window_without_the_wake_word(self):
         self.a.pending_list = [self.req()]; self.c.tick()
+        self.assertEqual(self.said, [])                       # held back a moment so the events that led here are said first
+        self.adv(1); self.c.tick()
         self.assertIn("python build.py", self.said[-1][0]); self.assertTrue(self.said[-1][1])
         self.said.clear(); self.c.tick(); self.assertEqual(self.said, [])                       # asked once, not every tick
         self.assertEqual(self.c.hear("approve"), "approve"); self.assertEqual(self.a.calls, [("respond", "r1", True)])
@@ -284,14 +286,33 @@ class Rules(unittest.TestCase):
         self.a.pending_list = [self.req("r2", cls=3, tool="agent.delegate", agent="claude", task="x")]; self.c.last_text = ""
         self.assertEqual(self.c.hear("yes"), "approve"); self.assertEqual(self.a.calls, [("respond", "r2", True)])
 
+    def test_the_ways_the_real_recogniser_mishears_approve_still_work_and_stay_gated(self):
+        # found in the live test: Whisper heard "approve" as "prove" and "Prue" until it was given the vocabulary
+        for heard in ("Praxis, prove.", "Praxis Prue", "praxis, approved"):
+            self.a.pending_list = [self.req()]; self.a.calls.clear(); self.c.last_text = ""; self.adv(5)
+            self.assertEqual(self.c.hear(heard), "approve", heard); self.assertEqual(self.a.calls, [("respond", "r1", True)])
+        self.a.pending_list = []; self.a.calls.clear()
+        self.assertEqual(self.c.hear("prove it to me that this works"), "goal")          # ordinary sentences are still goals
+
+    def test_an_answer_to_a_question_nobody_asked_is_not_a_goal_and_gets_a_clear_reply(self):
+        for t in ("Praxis, approve.", "praxis yes", "Praxis, deny"):
+            self.a.calls.clear(); self.said.clear(); self.c.last_text = ""; self.adv(5)
+            self.assertEqual(self.c.hear(t), "nothing pending", t)
+            self.assertEqual(self.a.calls, []); self.assertIn("Nothing is waiting", self.spoken())
+
     def test_nothing_else_can_become_a_goal_while_an_approval_is_pending(self):
         self.a.pending_list = [self.req()]
         for t in ("praxis fix the failing tests in calc.py", "create a new file called x", "what a nice day"):
             self.c.last_text = ""; self.assertEqual(self.c.hear(t), "waiting for answer", t)
         self.assertEqual(self.a.calls, [])
 
+    def test_muting_is_allowed_even_in_the_middle_of_an_approval_and_does_not_answer_it(self):
+        self.a.pending_list = [self.req()]; self.c.tick(); self.adv(1); self.c.tick()
+        self.assertEqual(self.c.hear("praxis mute"), "mute"); self.assertIn(("mute",), self.a.calls)
+        self.assertNotIn(("respond", "r1", True), self.a.calls); self.assertNotIn(("respond", "r1", False), self.a.calls)
+
     def test_silence_denies_after_a_reminder(self):
-        self.a.pending_list = [self.req()]; self.c.tick(); self.said.clear()
+        self.a.pending_list = [self.req()]; self.c.tick(); self.adv(1); self.c.tick(); self.said.clear()
         self.adv(25); self.c.tick(); self.assertIn("Still waiting", self.spoken()); self.assertEqual(self.a.calls, [])
         self.adv(40); self.c.tick()
         self.assertEqual(self.a.calls, [("respond", "r1", False)]); self.assertIn("No answer, so I denied", self.spoken())

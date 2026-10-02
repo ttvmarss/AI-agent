@@ -114,6 +114,15 @@ Double-click the **PRAXIS** shortcut. The window opens on **Mission**, and the f
    * *"Write a Python function slugify(text) in slug.py with a unit test, and run the tests."*
    * *"Read notes.txt and write a one-sentence summary to summary.txt."*
 
+## 5b. Talk to it
+
+If you installed the voice packages, the first launch downloads the speech models (about 200 MB, once; the screen says so) and then
+PRAXIS says "PRAXIS online". Speak normally; **start with its name**: *"Praxis, make a file called notes.txt with today's tasks."* It repeats
+what it understood, works, and tells you the result. Other things to say: *"Praxis, status"*, *"stop"*, *"mute"* (F4 listens again),
+*"frugal"* / *"balanced"* / *"quality"*, *"private"* / *"project"* / *"open"*. When it asks for approval it reads the action out loud:
+say **"approve"** (risky actions need that exact word) or **"deny"**; silence denies. If it mishears you, the words it heard are shown
+on screen. No microphone or model? It tells you why and gives you a one-line typing field. Headphones help if your speakers are loud.
+
 ## 6. How to use it safely
 
 * **STOP (Esc, or Ctrl+.)** is always live. It kills in-flight model calls, stops before the next step, and **restores the workspace** to how it was before the goal.

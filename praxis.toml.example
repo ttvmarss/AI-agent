@@ -107,6 +107,15 @@ max_model_calls = 8
 max_cost_usd = 0.0          # 0 = no cap (subscription calls report a list-price estimate)
 max_checkpoint_mb = 512     # PRAXIS copies the folder before each goal so it can undo; refuse folders bigger than this
 
+[voice]
+enabled = true              # speak to it, it speaks back; needs: pip install -e ".[voice]"
+wake_word = "praxis"        # it acts only on sentences that start with this
+voice = "en_GB-alan-medium" # Piper voice (downloaded once, ~60 MB); falls back to the operating system's voice
+stt_model = "base.en"       # Whisper size: tiny.en (fastest) | base.en | small.en (most accurate)
+attentive_s = 10.0          # seconds after it speaks that you may answer without the name
+approval_s = 60.0           # silence this long on an approval means "deny"
+input_device = ""           # microphone name or index; empty = the system default
+
 [privacy]
 data_class = "project"      # "private" = local (Ollama) only; nothing leaves the machine
 

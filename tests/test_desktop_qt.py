@@ -42,6 +42,14 @@ def fake_voice(controller, vcfg, progress=None, on_mute=None, texts=(), speak=Tr
     return loop
 
 
+def utterance(loop, seconds=0.9):
+    """A burst of loud 'speech' followed by silence, fed to the fake microphone exactly as a real one would deliver it."""
+    import array, math
+    n = int(16000 * seconds)
+    loop.mic.push(array.array("h", (int(9000 * math.sin(2 * math.pi * 220 * i / 16000)) for i in range(n))).tobytes())
+    loop.mic.silence(1.4)
+
+
 def no_voice(*a, **k):
     raise VoiceUnavailable("disabled for this test")
 
@@ -414,6 +422,54 @@ class OneScreen(unittest.TestCase):
         self.assertTrue(pump(self.verified(win), 10))
         by = {p.card.name: len(p.calls) for p in st.providers}
         self.assertGreater(by["ollama/qwen"], 0); self.assertEqual(by["claude/opus"] + by["claude/sonnet"] + by["claude/fable"], 0)
+
+    # ---- talking to it ------------------------------------------------------------------------------------------------------------
+    def voiced(self, *heard, **kw):
+        texts = list(heard)
+        win, ctl, ws = self.make(voice_factory=lambda c, v, progress=None, on_mute=None: fake_voice(c, v, progress, on_mute, texts), **kw)
+        self.assertTrue(pump(lambda: win.voice is not None, 5), win.voice_error)
+        lp = win.voice                                # wait out the spoken greeting (the loop is deaf while it talks), then let it learn the room
+        self.assertTrue(pump(lambda: lp.voice.said and not lp.speaking and not lp._ttsq and time.monotonic() > lp.deaf_until + 0.1, 5))
+        lp.mic.silence(0.6); pump(lambda: lp.mic.idle(), 3)
+        return win, ctl, ws
+
+    def test_speaking_a_goal_runs_it_and_the_result_is_spoken_back(self):
+        win, ctl, ws = self.voiced("Praxis, create a.txt containing 1")
+        utterance(win.voice)
+        self.assertTrue(pump(self.verified(win), 15), win.core.title)
+        self.assertTrue(os.path.exists(os.path.join(ws, "a.txt")))
+        said = " | ".join(win.voice.voice.said)
+        self.assertTrue(pump(lambda: "Done" in " | ".join(win.voice.voice.said), 5), said)
+        self.assertIn("Understood", " | ".join(win.voice.voice.said))
+        self.assertFalse(win.prompt.isVisible())                                  # and at no point was there a chat box
+
+    def test_speech_without_the_wake_word_does_nothing_at_all(self):
+        win, ctl, ws = self.voiced("create a.txt containing 1")
+        utterance(win.voice)
+        self.assertTrue(pump(lambda: win.voice.transcripts, 5))
+        pump(lambda: False, 0.6)
+        self.assertEqual(ctl.state, "idle"); self.assertFalse(os.path.exists(os.path.join(ws, "a.txt")))
+        self.assertEqual(win.voice.voice.said, ["PRAXIS online. Say my name, then tell me what you need."][:len(win.voice.voice.said)])
+
+    def test_what_it_heard_is_shown_so_a_mishearing_is_visible(self):
+        win, ctl, ws = self.voiced("Praxis, status please")
+        utterance(win.voice)
+        self.assertTrue(pump(lambda: "status please" in win.core.caption, 5), win.core.caption)
+
+    def test_f4_and_the_word_mute_both_silence_the_microphone_and_it_shows(self):
+        win, ctl, ws = self.voiced("Praxis, mute")
+        utterance(win.voice)
+        self.assertTrue(pump(lambda: win.voice.state == "muted", 5), win.voice.state)
+        win.toggle_mute(); self.assertTrue(pump(lambda: win.voice.state != "muted", 2))      # F4 turns it back on
+        win.toggle_mute(); self.assertTrue(pump(lambda: win.voice.state == "muted", 2))
+
+    def test_the_loop_stays_deaf_while_it_speaks_so_it_never_answers_itself(self):
+        win, ctl, ws = self.voiced()
+        lp = win.voice
+        lp.speaking = True
+        before = len(lp.transcripts)
+        utterance(lp); pump(lambda: False, 1.0)
+        self.assertEqual(len(lp.transcripts), before)
 
     # ---- layout and folders -------------------------------------------------------------------------------------------------------
     def test_at_the_minimum_size_the_core_and_the_prompt_do_not_overlap(self):

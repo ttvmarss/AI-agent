@@ -13,6 +13,7 @@ import time
 from . import narrator, wake
 
 PHANTOM = {"thank you", "thanks", "thanks for watching", "you", "bye", "okay", "ok", "hmm", "uh", "um", "the", "so", "yeah"}
+PROMPT_DELAY = 0.8
 
 
 class Conductor:
@@ -24,6 +25,7 @@ class Conductor:
         self.attentive_until = 0.0
         self.last_text, self.last_at = "", -99.0
         self.asked = {}                 # approval id -> (asked_at, reminded)
+        self.seen = {}                  # approval id -> first seen (the prompt waits PROMPT_DELAY so earlier events are said first)
         self.spoken_reports = set()
         self.last_unknown_at = -99.0
 
@@ -76,6 +78,9 @@ class Conductor:
                 self.say("I'm waiting for your answer. Say approve, or deny.")
                 self.last_unknown_at = now
             return "waiting for answer"
+        if k == "stray_answer":
+            self.say("Nothing is waiting for your approval.")
+            return "nothing pending"
         if k == "mute":
             self.a.mute()
             self.say("Muted. Press F4 to listen again.", True)
@@ -153,8 +158,14 @@ class Conductor:
             for rid in list(self.asked):
                 if rid not in live:
                     del self.asked[rid]
+            for rid in list(self.seen):
+                if rid not in live:
+                    del self.seen[rid]
             for req in pending:
                 if req.id not in self.asked:
+                    first = self.seen.setdefault(req.id, now)
+                    if now - first < PROMPT_DELAY:                 # let the events that led here ("plan ready") be said first
+                        continue
                     self.asked[req.id] = [now, False]
                     self.say(narrator.approval_prompt(req), True)
                     self.attentive_until = max(self.attentive_until, now + self.approval_s)
