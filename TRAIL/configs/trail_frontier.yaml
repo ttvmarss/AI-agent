@@ -1,0 +1,29 @@
+# Future large-scale infrastructure. Declared so the lineage is explicit; NOT trainable on current hardware.
+name: trail-frontier
+generation: 1
+seed: 1337
+
+model:
+  n_layers: 96
+  d_model: 12288
+  n_heads: 96
+  n_kv_heads: 8
+  max_seq_len: 32768
+  rope_theta: 10000.0
+  tie_embeddings: true
+
+tokenizer:
+  vocab_size: 65535
+
+data:
+  sources: [datasets/raw]
+  output: datasets/processed/trail_frontier
+  mixture: {language: 0.30, code: 0.25, mathematics: 0.15, science: 0.15, technical: 0.10, structured_data: 0.05}
+  val_fraction: 0.02
+
+training:
+  run_dir: checkpoints/trail-frontier
+  seq_len: 32768
+  batch_size: 2
+  max_steps: 1000000
+  lr: 1.0e-4

@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+checkpoints/*
+!checkpoints/.gitkeep
+datasets/processed/
+datasets/raw/
+runs/
+*.egg-info/

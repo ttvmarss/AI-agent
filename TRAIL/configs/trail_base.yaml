@@ -1,0 +1,29 @@
+# General-capability training. Multi-GPU class hardware.
+name: trail-base
+generation: 1
+seed: 1337
+
+model:
+  n_layers: 24
+  d_model: 2048
+  n_heads: 16
+  n_kv_heads: 4
+  max_seq_len: 4096
+  rope_theta: 10000.0
+  tie_embeddings: true
+
+tokenizer:
+  vocab_size: 32768
+
+data:
+  sources: [datasets/raw]
+  output: datasets/processed/trail_base
+  mixture: {language: 0.30, code: 0.25, mathematics: 0.15, science: 0.15, technical: 0.10, structured_data: 0.05}
+  val_fraction: 0.02
+
+training:
+  run_dir: checkpoints/trail-base
+  seq_len: 4096
+  batch_size: 8
+  max_steps: 300000
+  lr: 3.0e-4
