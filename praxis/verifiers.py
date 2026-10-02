@@ -7,10 +7,13 @@ from dataclasses import dataclass
 class Result:
     passed: bool
     detail: str
+    output: str = ""  # raw tool output (UNTRUSTED data); fed to replanners, never to the reason string
 
 
-def verify(spec, ws):
-    """spec: {"type": ..., ...}. Unknown verifier types FAIL (never silently pass)."""
+def verify(spec, ws, command_gate=None):
+    """spec: {"type": ..., ...}. Unknown verifier types FAIL (never silently pass).
+
+    `command_gate(cmd) -> (allowed, reason)` is the Guard: verifier commands are actions like any other."""
     t = spec.get("type")
     try:
         if t == "file_exists":
@@ -24,9 +27,16 @@ def verify(spec, ws):
         if t == "file_not_contains":
             txt = ws.fs_read(spec["path"])
             return Result(spec["text"] not in txt, f"file_not_contains {spec['path']}")
-        if t == "command_ok":  # e.g. run the project's tests; executed through the same runtime
+        if t == "file_equals":  # exact content, tolerant only of trailing newlines
+            return Result(ws.fs_read(spec["path"]).rstrip("\n") == spec["text"].rstrip("\n"),
+                          f"file_equals {spec['path']}")
+        if t == "command_ok":  # e.g. run the project's tests
+            if command_gate is not None:
+                allowed, why = command_gate(spec["cmd"])
+                if not allowed:
+                    return Result(False, f"command_ok {spec['cmd']!r} refused by guard: {why}")
             r = ws.shell_run(spec["cmd"], spec.get("timeout", 120))
-            return Result(r["returncode"] == 0, f"command_ok {spec['cmd']} rc={r['returncode']}")
+            return Result(r["returncode"] == 0, f"command_ok {spec['cmd']} rc={r['returncode']}", r["output"][-1500:])
         if t == "none":
             return Result(True, "no verifier required (read-only step)")
     except Exception as e:

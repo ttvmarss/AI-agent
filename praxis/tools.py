@@ -1,4 +1,5 @@
 """Tool runtime: workspace-confined tools plus checkpoint/rollback (the recovery primitive)."""
+import hashlib
 import os
 import shutil
 import subprocess
@@ -13,7 +14,8 @@ class ToolError(Exception):
 
 
 class Workspace:
-    def __init__(self, root):
+    def __init__(self, root, sandbox=None):
+        self.sandbox = sandbox
         self.root = os.path.realpath(root)
         os.makedirs(self.root, exist_ok=True)
         self.ckpt_dir = os.path.join(self.root, ".praxis", "checkpoints")
@@ -59,6 +61,19 @@ class Workspace:
             else:
                 shutil.copy2(s, d, follow_symlinks=False)
 
+    def manifest(self):
+        """{relpath: sha1} of every workspace file (used to report exactly what a delegate changed)."""
+        out = {}
+        for base, dirs, files in os.walk(self.root):
+            dirs[:] = [d for d in dirs if d not in _SKIP]
+            for fn in files:
+                p = os.path.join(base, fn)
+                if os.path.islink(p):
+                    continue
+                with open(p, "rb") as f:
+                    out[os.path.relpath(p, self.root)] = hashlib.sha1(f.read()).hexdigest()
+        return out
+
     # -- tools --------------------------------------------------------------
     def fs_read(self, path):
         with open(self.resolve(path), "r", errors="replace") as f:
@@ -76,21 +91,40 @@ class Workspace:
 
     def shell_run(self, cmd, timeout=60):
         import shlex
-        proc = subprocess.run(shlex.split(cmd), cwd=self.root, capture_output=True, text=True,
+        argv = shlex.split(cmd)
+        if self.sandbox is not None and self.sandbox.strong:
+            argv = self.sandbox.wrap(argv, self.root)
+        proc = subprocess.run(argv, cwd=self.root, capture_output=True, text=True,
                               timeout=timeout, shell=False)
         out = (proc.stdout + proc.stderr)[-MAX_OUT:]
         return {"returncode": proc.returncode, "output": out}
 
 
 class ToolRuntime:
-    def __init__(self, workspace):
+    def __init__(self, workspace, agents=None):
         self.ws = workspace
+        self.agents = agents or {}
         self.tools = {
             "fs.read": lambda a: self.ws.fs_read(a["path"]),
             "fs.list": lambda a: self.ws.fs_list(a.get("path", ".")),
             "fs.write": lambda a: self.ws.fs_write(a["path"], a["content"]),
             "shell.run": lambda a: self.ws.shell_run(a["cmd"], a.get("timeout", 60)),
+            "agent.delegate": self._delegate,
         }
+
+    def _delegate(self, a):
+        agent = self.agents.get(a.get("agent"))
+        if agent is None or not getattr(agent, "can_delegate", False):
+            raise ToolError(f"agent {a.get('agent')!r} is not configured for delegation")
+        from .router import ProviderError
+        before = self.ws.manifest()
+        try:
+            summary = agent.delegate(a["task"], self.ws.root)
+        except ProviderError as e:
+            raise ToolError(f"delegate failed: {e}")
+        after = self.ws.manifest()
+        changed = sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
+        return {"agent": a["agent"], "summary": str(summary)[:2000], "changed": changed}
 
     def run(self, tool, args):
         if tool not in self.tools:

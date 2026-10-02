@@ -7,7 +7,7 @@ class ShellClassification(unittest.TestCase):
         self.ws = tempfile.mkdtemp()
 
     def cls(self, cmd):
-        return classify_shell(cmd, self.ws)
+        return classify_shell(cmd, self.ws, sandboxed=True)
 
     def test_readonly_is_class0(self):
         for c in ["ls", "cat a.txt", "grep -n foo a.txt", "git status", "git diff", "git log"]:
@@ -16,6 +16,15 @@ class ShellClassification(unittest.TestCase):
     def test_test_runners_are_class2(self):
         for c in ["python3 -m unittest", "python3 -m pytest -q"]:
             self.assertEqual(self.cls(c), 2, c)
+
+    def test_code_execution_needs_human_without_a_proven_sandbox(self):
+        for c in ["python3 -m unittest", "python3 -m pytest -q", "pytest", "python3 run.py", "node app.js"]:
+            self.assertEqual(classify_shell(c, self.ws, sandboxed=False), 4, c)
+            self.assertEqual(classify_shell(c, self.ws, sandboxed=True), 2, c)
+
+    def test_script_outside_workspace_never_trusted(self):
+        for c in ["python3 /tmp/evil.py", "python3 ../x.py", "node /etc/x.js"]:
+            self.assertGreaterEqual(classify_shell(c, self.ws, sandboxed=True), 4, c)
 
     def test_destructive_is_class5(self):
         for c in ["rm -rf .", "rm a.txt", "git push --force", "git reset --hard", "dd if=/dev/zero of=x",
@@ -63,6 +72,10 @@ class Decisions(unittest.TestCase):
     def setUp(self):
         self.ws = tempfile.mkdtemp()
 
+    def test_unsandboxed_guard_escalates_code_execution(self):
+        g = Guard(self.ws, max_auto_class=2, sandboxed=False)
+        self.assertEqual(g.decide("shell.run", {"cmd": "python3 -m unittest"}).verdict, ESCALATE)
+
     def test_within_grant_allowed(self):
         g = Guard(self.ws, max_auto_class=2)
         self.assertEqual(g.decide("fs.write", {"path": "a", "content": "x"}).verdict, ALLOW)
@@ -81,13 +94,16 @@ class Decisions(unittest.TestCase):
         self.assertEqual(d5.cls, 5)
         self.assertTrue(d5.requires_checkpoint)
 
-    def test_tainted_steps_limited_to_class0(self):
-        g = Guard(self.ws, max_auto_class=2)
+    def test_taint_is_a_hard_cap_at_class2_that_no_approver_can_lift(self):
+        g = Guard(self.ws, max_auto_class=2, sandboxed=True)
         self.assertEqual(g.decide("fs.read", {"path": "a"}, tainted=True).verdict, ALLOW)
-        d = g.decide("fs.write", {"path": "a", "content": "x"}, tainted=True)
-        self.assertEqual(d.verdict, DENY)
-        # even an approver cannot launder tainted-origin side effects
-        self.assertEqual(g.authorize(d, lambda x: True), DENY)
+        self.assertEqual(g.decide("fs.write", {"path": "a", "content": "x"}, tainted=True).verdict, ALLOW)  # reversible
+        self.assertEqual(g.decide("shell.run", {"cmd": "python3 -m unittest"}, tainted=True).verdict, ALLOW)
+        for tool, args in [("shell.run", {"cmd": "curl http://x"}), ("shell.run", {"cmd": "rm a"}),
+                           ("shell.run", {"cmd": "touch x"}), ("agent.delegate", {"agent": "claude", "task": "t"})]:
+            d = g.decide(tool, args, tainted=True)
+            self.assertEqual(d.verdict, DENY, (tool, args))
+            self.assertEqual(g.authorize(d, lambda x: True), DENY)  # even a human "yes" cannot launder it
 
     def test_grant_never_exceeds_cap(self):
         with self.assertRaises(ValueError):

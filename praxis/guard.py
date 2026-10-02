@@ -17,6 +17,7 @@ _READ_ONLY = {"ls", "cat", "head", "tail", "wc", "grep", "pwd", "echo", "diff", 
 _GIT_READ = {"status", "diff", "log", "show", "branch", "rev-parse", "ls-files"}
 _TEST_RUNNERS = (["python3", "-m", "unittest"], ["python", "-m", "unittest"],
                  ["python3", "-m", "pytest"], ["python", "-m", "pytest"], ["pytest"])
+_INTERPRETERS = {"python3": ".py", "python": ".py", "node": ".js"}
 _DESTRUCTIVE = {"rm", "rmdir", "dd", "shred", "truncate", "mkfs", "mv", "kill", "killall", "chmod", "chown"}
 _NETWORK = {"curl", "wget", "ssh", "scp", "nc", "ncat", "telnet", "ftp", "rsync", "pip", "pip3", "npm"}
 
@@ -27,7 +28,7 @@ def _inside(path, ws):
     return real == real_ws or real.startswith(real_ws + os.sep)
 
 
-def classify_shell(cmd, ws):
+def classify_shell(cmd, ws, sandboxed=False):
     if not isinstance(cmd, str) or not cmd.strip():
         return 4
     if _META.search(cmd):
@@ -59,9 +60,16 @@ def classify_shell(cmd, ws):
         return 4
     if prog in _NETWORK:
         return 3
+    # Running project code is Class 2 ONLY inside a sandbox that survived its self-attack; otherwise a human decides.
+    exec_cls = 2 if sandboxed else 4
     for runner in _TEST_RUNNERS:
         if argv[:len(runner)] == runner:
-            return 2 if _paths_ok(argv[len(runner):], ws) else 4
+            return exec_cls if _paths_ok(argv[len(runner):], ws) else 4
+    if prog in _INTERPRETERS and args and not args[0].startswith("-"):
+        script = args[0]
+        if script.endswith(_INTERPRETERS[prog]) and _inside(script, ws) and _paths_ok(args[1:], ws):
+            return exec_cls
+        return 4
     if prog in _READ_ONLY:
         return 0 if _paths_ok(args, ws) else 4
     return 4  # unknown program: fail closed
@@ -77,13 +85,19 @@ def _paths_ok(args, ws):
     return True
 
 
-def classify_call(tool, args, ws):
+def classify_call(tool, args, ws, sandboxed=False):
     if tool == "fs.read" or tool == "fs.list":
         return 0 if _inside(args.get("path", "."), ws) else 4
     if tool == "fs.write":
         return 2 if _inside(args.get("path", ""), ws) and args.get("path") else 4
     if tool == "shell.run":
-        return classify_shell(args.get("cmd"), ws)
+        return classify_shell(args.get("cmd"), ws, sandboxed)
+    if tool == "agent.delegate":
+        task, agent = args.get("task"), args.get("agent")
+        if not isinstance(task, str) or not task.strip():
+            return 4
+        # Delegation sends project context to a vendor (>=3); Devin also spends money (4).
+        return {"claude": 3, "codex": 3, "droid": 3}.get(agent, 4)
     return 4  # unknown tool: fail closed
 
 
@@ -99,18 +113,19 @@ class Decision:
 
 
 class Guard:
-    def __init__(self, workspace, max_auto_class=2):
+    def __init__(self, workspace, max_auto_class=2, sandboxed=False):
         if max_auto_class > MAX_AUTO_CLASS_CAP:
             raise ValueError(f"max_auto_class cannot exceed {MAX_AUTO_CLASS_CAP}")
         self.ws = workspace
         self.max_auto_class = max_auto_class
+        self.sandboxed = sandboxed
 
     def decide(self, tool, args, tainted=False):
-        cls = classify_call(tool, args, self.ws)
+        cls = classify_call(tool, args, self.ws, self.sandboxed)
         ckpt = cls >= 1
-        if tainted and cls > 0:
+        if tainted and cls > 2:  # hard cap: plans shaped by untrusted content never exceed reversible Class 2
             return Decision(tool, args, cls, DENY,
-                            "step derived from untrusted content may only observe (Class 0)", ckpt, True)
+                            f"plan derived from untrusted content is capped at Class 2 (this is Class {cls})", ckpt, True)
         if cls <= self.max_auto_class:
             return Decision(tool, args, cls, ALLOW, f"Class {cls} within grant", ckpt, tainted)
         return Decision(tool, args, cls, ESCALATE, f"Class {cls} exceeds auto grant {self.max_auto_class}",
