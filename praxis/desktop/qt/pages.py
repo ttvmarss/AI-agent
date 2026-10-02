@@ -77,12 +77,12 @@ class MissionPage(QWidget):
             h = QLabel(name); h.setObjectName("h2"); l.addWidget(h)
         self.activity = LogView(); lc.layout().addWidget(self.activity)
         self.evidence = make_tree(["", "Check"], [34]); rc.layout().addWidget(self.evidence)
-        split.addWidget(lc); split.addWidget(rc); split.setSizes([620, 380]); split.setMinimumHeight(110)
+        split.addWidget(lc); split.addWidget(rc); split.setSizes([620, 380]); split.setMinimumHeight(100)
         lay.addWidget(split, 3)
         bar = card("card"); bl = QVBoxLayout(bar); bl.setContentsMargins(12, 10, 12, 10); bl.setSpacing(6)
         self.objective = _Objective()
         self.objective.setPlaceholderText("What outcome do you want?   e.g. \"Fix the failing tests in calc.py without editing the tests\"")
-        self.objective.setFixedHeight(54)
+        self.objective.setFixedHeight(50)
         self.objective.submit.connect(app.run_goal)
         bl.addWidget(self.objective)
         row = QHBoxLayout()
@@ -97,14 +97,18 @@ class MissionPage(QWidget):
         self._ev_sig = None
 
     def append_events(self, events):
+        text = level = None
         for e in events:
             text, level = summarize(e)
             self.activity.append_line(f"{clock(e.ts)}  {text}", level)
+            self.core.pulse(level)                       # a real event: a ripple runs through the sphere
+        if text:
+            self.core.set_caption(text, level)           # and the latest one is typed out under it
 
     def clear_feed(self):
         self.activity.clear()
 
-    def show_view(self, v, state, waiting, nodes):
+    def show_view(self, v, state, waiting, nodes, footer=""):
         """Map real state onto the core: its colour, progress ring, text, and which provider is lit."""
         done = sum(s.state in ("verified", "ran") for s in v.steps)
         prog = done / len(v.steps) if v.steps else 0.0
@@ -133,6 +137,13 @@ class MissionPage(QWidget):
         else:
             mode, ttl, sub = "idle", "READY", "describe an outcome below"
         self.core.set_state(mode, prog, ttl, sub)
+        self.core.set_footer(footer)
+        if state == "starting":
+            self.core.set_caption("Booting: detecting hardware, tools and sandbox")
+        elif state == "error":
+            self.core.set_caption(self.app.controller.error[:160], "bad")
+        elif ttl == "SETUP NEEDED":
+            self.core.set_caption(self.hint[:200], "warn")
         self.core.set_nodes(nodes)
         self.core.set_active(v.active_provider)
         sig = tuple((s.id, s.state) for s in v.steps)

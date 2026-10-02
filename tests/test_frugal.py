@@ -36,6 +36,23 @@ class Usage(unittest.TestCase):
         open(path, "a").write(old + "\n{garbage\n")
         u = UsageTracker(path=path)
         self.assertEqual(u.used("groq/x", "24h")["tokens"], 500)
+        self.assertEqual(len(u.rows), 1)                                # the 30-day-old row was not kept in memory at all
+
+    def test_a_row_inside_the_keep_window_is_loaded_and_one_outside_is_not(self):
+        path = os.path.join(tempfile.mkdtemp(), "usage.jsonl")
+        now = time.time()
+        with open(path, "w") as f:
+            for days in (1, 7.5, 8.5, 20):
+                f.write(json.dumps({"p": "groq/x", "ts": now - days * 86400, "cost": 0, "tok": 1}) + "\n")
+        self.assertEqual(sorted(round((now - r[0]) / 86400, 1) for r in UsageTracker(path=path, clock=lambda: now).rows), [1.0, 7.5])
+
+    def test_a_nonsense_budget_key_is_ignored_not_a_crash(self):
+        u = UsageTracker({"claude": {"calls_2h": 1, "calls_foo": 1, "bogus": 3, "calls_24h": 0}})
+        u.record("claude/opus", time.time())
+        self.assertEqual(u.pressure("claude/opus"), 0.0)                # unknown windows and a zero limit mean "no budget"
+        u2 = UsageTracker({"claude": {"calls_24h": 4, "calls_2h": 1}})
+        u2.record("claude/opus", time.time())
+        self.assertAlmostEqual(u2.pressure("claude/opus"), 0.25)        # the valid key still counts
 
     def test_router_records_every_successful_call(self):
         u = UsageTracker()

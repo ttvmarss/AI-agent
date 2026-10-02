@@ -9,6 +9,10 @@ Claude less, with a native desktop command center. The kernel is pure Python 3.1
 **Start here: [`docs/MORNING-GUIDE.md`](docs/MORNING-GUIDE.md)** (Windows setup in ~20 minutes).
 Design: [`docs/ARCHITECTURE-REV0.md`](docs/ARCHITECTURE-REV0.md).
 
+![The PRAXIS core in six states: booting, planning with a stream to the AI being called, needs you, verified, failed, stopping](docs/media/core-states.jpg)
+
+*The core, rendered by the real widget: every colour, ring and stream is real state (see the morning guide).*
+
 ## What it does
 
 ```
@@ -31,11 +35,13 @@ goal -> recall (memory) -> plan (model A) -> observe files (labeled UNTRUSTED) -
   documented data terms and the source of its limits (`python -m praxis free`).
 * **Hardware-aware local models**: reads your real VRAM/RAM, models speed with bandwidth physics (MoE vs dense), then
   *measures* tokens/s and quality. Dated, sourced catalog of Ollama models.
-* **Desktop command center** (PySide6): a live core whose colour, progress ring and orbiting provider dots are real state (who is
-  being called right now, whose allowance is nearly spent, who is resting, who this goal may not use); the plan as a dependency
-  graph; **Fuel** page with the failover ladder and usage per model; DATA and FRUGALITY switches in the header; timeline with
-  "why"; models (download + benchmark); live CPU/RAM/GPU/VRAM; approval dialogs show the exact action and default to Deny;
-  **STOP** kills in-flight calls and restores the workspace.
+* **Desktop command center** (PySide6): a living sphere of ~3,000 particles whose colour, speed, scan beam, shockwave and ring are
+  real state (idle, working, needs you, verified, failed, stopping; plan progress), a particle stream to the provider being called
+  right now, a ripple for every real event, and a typed caption of the latest one; your AIs flank it with budget arcs, rest clocks
+  and data-class blocks; the plan as a dependency graph; **Fuel** page with the failover ladder and usage per model; DATA and
+  FRUGALITY switches in the header; timeline with "why"; models (download + benchmark); live CPU/RAM/GPU/VRAM; approval dialogs
+  show the exact action and default to Deny; **STOP** kills in-flight calls and restores the workspace. It lowers its own detail
+  on slow machines and honours `PRAXIS_REDUCE_MOTION=1`.
 
 ## Run
 

@@ -97,6 +97,21 @@ class Adapter(unittest.TestCase):
         self.assertEqual(len(srv.reqs), 2)
         self.assertAlmostEqual(sum(slept), 12.0, places=0)
 
+    def test_cancel_interrupts_a_throttle_wait_and_is_reported_as_a_cancel_not_a_rate_limit(self):
+        srv, url = chat_server(); self.addCleanup(srv.shutdown)
+        p = self.mk(url, rpm=3)           # 20 s between requests: under the 25 s cap, so the provider really waits
+        p.complete("planner", MSGS)
+        ev = threading.Event(); proc.set_cancel(ev); threading.Timer(0.3, ev.set).start()
+        t0 = time.time()
+        try:
+            with self.assertRaises(ProviderError) as cm:
+                p.complete("planner", MSGS)
+        finally:
+            proc.set_cancel(None)
+        self.assertLess(time.time() - t0, 5)
+        self.assertNotIsInstance(cm.exception, RateLimited)
+        self.assertIn("cancelled", str(cm.exception)); self.assertEqual(len(srv.reqs), 1)    # and the second request was never sent
+
     def test_cancel_interrupts_the_throttle_wait(self):
         srv, url = chat_server(); self.addCleanup(srv.shutdown)
         p = self.mk(url, rpm=1)           # second call would wait ~60 s
@@ -110,11 +125,84 @@ class Adapter(unittest.TestCase):
             proc.set_cancel(None)
         self.assertLess(time.time() - t0, 5)
 
+    def test_free_only_discovery_needs_both_prices_to_be_zero(self):
+        models = [{"id": "free-a", "pricing": {"prompt": "0", "completion": "0"}},
+                  {"id": "pays-for-input", "pricing": {"prompt": "0.001", "completion": "0"}},
+                  {"id": "pays-for-output", "pricing": {"prompt": "0", "completion": "0.002"}},
+                  {"id": "tagged:free", "pricing": {"prompt": "0.5", "completion": "0.5"}},
+                  {"id": "no-pricing-info"}, {"nonsense": True}]
+        srv, url = chat_server(handler=lambda h, m, path, req: h._send({"data": models})); self.addCleanup(srv.shutdown)
+        self.assertEqual(self.mk(url).discover(free_only=True), ["free-a", "tagged:free"])
+        self.assertEqual(len(self.mk(url).discover()), 5)                       # without the filter: everything that has an id
+
     def test_discover_lists_models_and_filters_free_ones(self):
         srv, url = chat_server(); self.addCleanup(srv.shutdown)
         p = self.mk(url)
         self.assertEqual(p.discover(), ["free-a", "paid-b"])
         self.assertEqual(p.discover(free_only=True), ["free-a"])
+
+
+    def test_payment_required_and_quota_are_rate_limits_with_long_rests_not_generic_errors(self):
+        for status, body in ((402, {"error": {"message": "payment required"}}), (429, {"error": {"message": "Too many requests"}})):
+            srv, url = chat_server(status=status, body=body)
+            try:
+                with self.assertRaises(RateLimited) as cm:
+                    self.mk(url).complete("planner", MSGS)
+                self.assertEqual(cm.exception.retry_after, 4 * 3600.0 if status == 402 else 60.0)   # 402: out of credit; 429 w/o header: a minute
+            finally:
+                srv.shutdown()
+
+    def test_a_model_that_is_gone_is_benched_whatever_status_the_vendor_uses(self):
+        for status, msg in ((404, "no such route"), (400, "The model `old-model` has been decommissioned"),
+                            (422, "model does not exist"), (400, "model 'x' not found")):
+            srv, url = chat_server(status=status, body={"error": {"message": msg}})
+            try:
+                with self.assertRaises(ModelUnavailable):
+                    self.mk(url).complete("planner", MSGS)
+            finally:
+                srv.shutdown()
+        srv, url = chat_server(status=400, body={"error": {"message": "context length exceeded"}})   # a 400 about something else is NOT 'gone'
+        try:
+            with self.assertRaises(ProviderError) as cm:
+                self.mk(url).complete("planner", MSGS)
+            self.assertNotIsInstance(cm.exception, ModelUnavailable)
+        finally:
+            srv.shutdown()
+
+    def test_both_401_and_403_mean_check_the_key(self):
+        for status in (401, 403):
+            srv, url = chat_server(status=status, body={"error": {"message": "nope"}})
+            try:
+                with self.assertRaises(ProviderError) as cm:
+                    self.mk(url).complete("planner", MSGS)
+                self.assertIn("authentication failed", str(cm.exception))
+                self.assertNotIsInstance(cm.exception, (RateLimited, ModelUnavailable))
+            finally:
+                srv.shutdown()
+
+    def test_a_key_echoed_back_by_the_server_never_reaches_an_error_message(self):
+        """Vendors often echo the bad key in the error text. It must never be shown, logged, or put in an event."""
+        key = "sk-test-KEY"
+        for status in (401, 403, 429, 402, 500, 404):
+            srv, url = chat_server(status=status, body={"error": {"message": f"Incorrect API key provided: {key}. Also {key} is bad"}})
+            try:
+                with self.assertRaises(ProviderError) as cm:
+                    self.mk(url).complete("planner", MSGS)
+                self.assertNotIn(key, str(cm.exception), status)
+                if status in (429, 402, 500, 404):
+                    self.assertIn("[key]", str(cm.exception), status)       # scrubbed, not dropped: the rest of the message survives
+            finally:
+                srv.shutdown()
+
+    def test_a_pacing_wait_longer_than_the_cap_is_handed_to_the_router_instead_of_blocking(self):
+        srv, url = chat_server(); self.addCleanup(srv.shutdown)
+        t = [100.0]; slept = []
+        p = self.mk(url, rpm=1, clock=lambda: t[0], sleep=lambda s: slept.append(s))      # 1/min: the next slot is 60 s away
+        p.complete("planner", MSGS)
+        with self.assertRaises(RateLimited) as cm:
+            p.complete("planner", MSGS)
+        self.assertAlmostEqual(cm.exception.retry_after, 60.0, places=0)
+        self.assertEqual(slept, []); self.assertEqual(len(srv.reqs), 1)                  # it did not sleep a minute, and sent nothing
 
 
 class KeyStore(unittest.TestCase):
@@ -132,6 +220,16 @@ class KeyStore(unittest.TestCase):
         if os.name == "posix":
             mode = stat.S_IMODE(os.stat(os.path.join(self.home, "secrets.json")).st_mode)
             self.assertEqual(mode, 0o600)
+
+    def test_the_key_file_is_created_private_not_fixed_up_afterwards(self):
+        if os.name != "posix":
+            self.skipTest("POSIX permissions")
+        old_umask = os.umask(0o022)
+        self.addCleanup(os.umask, old_umask)
+        from unittest import mock
+        with mock.patch("praxis.secrets.os.chmod", side_effect=OSError("denied")):      # the after-the-fact chmod cannot save it
+            secrets.set("groq", "file-key-123456")
+        self.assertEqual(stat.S_IMODE(os.stat(os.path.join(self.home, "secrets.json")).st_mode), 0o600)
 
     def test_names_mask_and_remove(self):
         secrets.set("groq", "abcdefghijklmnop"); secrets.set("cerebras", "zzzzzzzzzzzzzzzz")
@@ -159,6 +257,12 @@ class SecretScanner(unittest.TestCase):
         for text in ("def add(a, b): return a + b", "The password policy requires rotation.", "x = 1\nprint('hello world')",
                      "token_count = len(tokens)", "sk = 3"):
             self.assertEqual(find_secrets(text), [], text)
+
+    def test_short_or_empty_assignments_are_not_secrets_but_prefixed_names_are(self):
+        for text in ('password = x', "secret: abc", "api_key = None", 'password=""', "auth_token: 1234567"):
+            self.assertEqual(find_secrets(text), [], text)                    # fewer than 8 value characters: not a credential
+        for text in ("STRIPE_SECRET_KEY=abcdefghijkl", "export AUTH_TOKEN: abcdefgh", "my.api-key = 'abcdefgh1234'", "DB_PASSWD=hunter2hunter2"):
+            self.assertEqual(find_secrets(text), ["password assignment"], text)
 
     def test_redact_masks_the_value(self):
         out = redact("key=AKIAABCDEFGHIJKLMNOP end")

@@ -182,6 +182,7 @@ class MainWindow(QMainWindow):
             self._on_ready()   # snapshot the history BEFORE this goal's events begin
         self.show_page("Mission")
         self.mission.clear_feed()
+        self.mission.core.set_caption("Goal accepted. Planning...")
         self.controller.submit(text, no_critic=not self.mission.critic.isChecked(), data_class=self.data_seg.current)
 
     def resume_goal(self):
@@ -249,7 +250,7 @@ class MainWindow(QMainWindow):
             self.mission.append_events(u.events)   # independent of each other: one failing must not starve the other
             self.timeline.add(u.events)
             waiting = bool(u.approvals) or u.view.status == "WAITING FOR YOU"
-            self.mission.show_view(u.view, state, waiting and state == "working", c.nodes())
+            self.mission.show_view(u.view, state, waiting and state == "working", c.nodes(), self._footer(state))
             self.cost.setText(f"${u.view.cost:.3f}")
             for req in u.approvals:
                 if req.id not in self._shown:
@@ -258,7 +259,7 @@ class MainWindow(QMainWindow):
             if state == "idle" and self._prev_state in ("working", "stopping"):
                 self.mission.set_busy(False, bool(c.unfinished()))
         else:
-            self.mission.show_view(View(), state, False, c.nodes())
+            self.mission.show_view(View(), state, False, c.nodes(), "")
         label, tone = PILL.get(state, ("?", "muted"))
         if state == "working" and waiting:
             label, tone = "NEEDS YOU", "warn"
@@ -276,6 +277,14 @@ class MainWindow(QMainWindow):
         if self.current == "Fuel":
             self.fuel.refresh()
         self._prev_state = state
+
+    def _footer(self, state):
+        """Real settings, shown under the core: how it is routing, what data it may touch, how many models it can reach."""
+        c, st = self.controller, self.controller.stack
+        if st is None or state in ("starting", "error"):
+            return ""
+        return (f"ROUTING {STRATEGY_BACK.get(st.router.strategy, st.router.strategy).upper()}   \u00b7   "
+                f"DATA {c.effective_data_class().upper()}   \u00b7   {len(st.providers)} MODELS")
 
     def _ask(self, req):
         dlg = ApprovalDialog(self, req)
@@ -314,6 +323,8 @@ class MainWindow(QMainWindow):
             f"install Ollama for local models, or add a free key on the Fuel page. Not found: {missing}.")
         self.note(f"Ready. {n} model instance(s) available." + ("" if n else "  None found: open Fuel, Models, or run `praxis doctor`."),
                   "muted" if n else "warn")
+        if n:
+            self.mission.core.set_caption(f"Ready. {n} model instance(s) available.")
         pg = self.pages[self.current]
         if hasattr(pg, "refresh"):
             pg.refresh(force=True) if self.current == "Fuel" else pg.refresh()

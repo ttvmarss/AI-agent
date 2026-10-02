@@ -27,7 +27,7 @@ def provider_nodes(stack, data_class="project"):
         nodes.append({
             "family": fam, "models": models, "privacy": first.card.privacy, "cost_class": cost_class(first),
             "pressure": max(stack.usage.pressure(p.card.name) for p in members),
-            "cooling_s": min(cooling) if all(c > 0 for c in cooling) else 0,
+            "cooling_s": min(cooling),     # the family rests only when EVERY model in it does: otherwise its earliest-free member is 0
             "blocked": provider_rank(first) > GOAL_RANK.get(data_class, 1),
             "delegate_only": not all(getattr(p, "can_complete", True) for p in members),
             "usage": stack.usage.summary(fam),

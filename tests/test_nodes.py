@@ -45,6 +45,21 @@ class Nodes(unittest.TestCase):
         c = next(n for n in provider_nodes(st, "project") if n["family"] == "claude")
         self.assertTrue(250 <= c["cooling_s"] <= 305)                                          # resting until the earliest return
 
+    def test_one_models_own_budget_makes_the_whole_family_node_show_the_pressure(self):
+        u = UsageTracker({"claude/fable": {"calls_24h": 2}})              # an EXACT-model budget: opus has none
+        for _ in range(2):
+            u.record("claude/fable", time.time())
+        claude = next(n for n in provider_nodes(mkstack(self.ps, usage=u), "project") if n["family"] == "claude")
+        self.assertGreaterEqual(claude["pressure"], 1.0)                  # the node warns about its most-spent model, not the average
+
+    def test_a_family_with_no_resting_member_never_shows_a_clock(self):
+        st = mkstack(self.ps)
+        self.assertEqual(next(n for n in provider_nodes(st, "project") if n["family"] == "claude")["cooling_s"], 0)
+        for name, secs in (("claude/opus", 900), ("claude/fable", 300)):
+            st.router.cooling[name] = time.time() + secs
+        c = next(n for n in provider_nodes(st, "project") if n["family"] == "claude")
+        self.assertTrue(250 <= c["cooling_s"] <= 305)
+
     def test_measured_scores_and_costs_surface(self):
         reg = Registry(); reg.record("groq/gpt-oss", "planning", 0.88, 20, 3, cost_per_task=0.0, tokens_per_s=300)
         n = next(n for n in provider_nodes(mkstack(self.ps, registry=reg), "project") if n["family"] == "groq")

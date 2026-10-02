@@ -1430,12 +1430,20 @@ scratch*: nothing observed by the weaker attempt is carried over, so untrusted c
 never to a model that was already tried.
 
 **42.5 The command center (`praxis/desktop/qt/`, PySide6; Tk remains the fallback).** The window is still only a projection of the
-event log plus the router's state (design law 3). The core's colour is PRAXIS's state; its ring is steps done / total; one orbiting
-dot per provider family encodes cost class (colour), budget pressure (arc), an in-flight call (beam, from the new `model.try` event),
-a rest after a rate limit (dim with a clock) and a data-class block (hollow). The Fuel page shows the exact failover ladder
-`Router.eligible()` would use right now. The DATA and FRUGALITY header switches write straight into the controller and router, and are
-re-synchronised from the router when a stack loads, so the control always shows what will run. The Qt package imports nothing from Tk
-(a Qt-only install has no `tkinter`); the approval wording lives in a toolkit-free module so both shells say the same thing.
+event log plus the router's state (design law 3). Its centre is a living sphere (`particles.py`, pure math; `core.py`, painting):
+about 3,000 points on a ball with a crisp shell, blue at the top fading to pink at the bottom, a few warm sparks, and differential
+rotation (the equator turns faster than the poles). **Rule: decoration is allowed, fake data is not**, so every behaviour is bound to
+real state. The sphere's tint, spin, size, breathing and jitter are eased toward the current state's target (and snap fast only for
+STOP, so a kill switch looks like one); a stream of particles flows to the provider named by `View.active_provider` (the `model.try`
+event); a tilted ring of points lights in proportion to steps verified; every real event sends a rate-limited ripple through it
+and the latest event's text is typed out in a caption box; VERIFIED triggers a shockwave; starting re-assembles it from scattered
+points. Providers flank the sphere (free/local left, subscriptions right) with budget-pressure arcs, a rest clock and a hollow
+style for a data-class block. The simulation is stepped with `advance(dt)` (clamped so a stalled frame cannot jump), so previews and
+tests drive it deterministically. Cost control: the aura is rendered once per colour state at half resolution; calm states tick at
+24 fps; a `Quality` governor steps the particle count down (3000 / 2000 / 1200 / 600, never back up, so it cannot flap) when frames
+stay slow; `PRAXIS_REDUCE_MOTION=1` slows everything. The DATA and FRUGALITY header switches write straight into the controller and
+router and are re-synchronised from the router when a stack loads, so the control always shows what will run. The Qt package imports
+nothing from Tk (a Qt-only install has no `tkinter`); the approval wording lives in a toolkit-free module so both shells agree.
 
 **42.6 Evidence.** 357 tests in the suite. Full run on Python 3.11 with PySide6 6.11: 357 run, 341 execute and 16 skip (the Tk window tests, which need `tkinter`); the Tk window tests (with the controller and view tests) run separately on Python 3.12 under a virtual display: 49 pass. Of the 357, 24 drive the **real** Qt window offscreen with the real controller: run to VERIFIED, the core lighting the provider being called *right now*, approval dialogs answered from inside the modal loop (exact action shown, Deny focused and default, Esc and close refuse, one dialog per request), STOP restoring the workspace, the `private` setting keeping a cloud model from ever seeing the goal, `frugal` serving a goal from the local model with **zero** Claude calls, the failover ladder in frugal order, and a key added through the dialog making the provider appear in the real `build_stack`. Free-tier adapters are tested against local servers that return the documented error shapes. Screenshots of every page were reviewed at 1360x860 and at the 1100x760 minimum. Mutation (sabotage) results for this phase are appended below when the run completes.
 

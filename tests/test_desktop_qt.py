@@ -231,6 +231,51 @@ class QtUI(unittest.TestCase):
         self.assertIn("Fuel", win.mission.core.subtitle)                              # and where to fix it
         self.assertIn("None found", win.status.text())
 
+    def test_the_core_types_out_the_latest_real_event_and_shows_the_live_settings(self):
+        win, ctl, ws = self.make(stack=self.rich_stack(strategy="frugal"))
+        core = win.mission.core
+        self.assertTrue(pump(lambda: "ROUTING FRUGAL" in core.footer))
+        self.assertIn("DATA PROJECT", core.footer); self.assertIn("6 MODELS", core.footer)
+        win.data_seg.changed.emit("private"); win.frugal_seg.changed.emit("quality")
+        self.assertTrue(pump(lambda: "DATA PRIVATE" in core.footer and "ROUTING QUALITY" in core.footer))   # follows the switches
+        win.data_seg.changed.emit("project")
+        self.goal(win, "make a.txt")
+        self.assertEqual(core.caption, "Goal accepted. Planning...")                      # said the instant the goal was accepted
+        self.assertTrue(pump(self.verified(win), 10))                                    # (finish it: closing mid-goal asks a question)
+
+    def test_every_real_event_ripples_the_sphere_and_the_last_one_is_the_caption(self):
+        win, ctl, ws = self.make()
+        pulses = []
+        orig = win.mission.core.pulse
+        win.mission.core.pulse = lambda level="info": (pulses.append(level), orig(level))[1]
+        self.goal(win, "make a.txt")
+        self.assertTrue(pump(self.verified(win)))
+        pump(lambda: False, 0.3)
+        lines = [l for l in win.mission.activity.toPlainText().splitlines() if l.strip()]
+        self.assertEqual(len(pulses), len(lines))                                         # one ripple per real event
+        self.assertIn("ok", pulses)                                                       # PASS / VERIFIED are 'ok' ripples
+        self.assertEqual(win.mission.core.caption, lines[-1].split("  ", 1)[1])           # the caption IS the last event
+        self.assertEqual(win.mission.core.cap_level, "ok")
+
+    def test_boot_and_error_states_are_explained_on_the_core(self):
+        gate = threading.Event()
+        ws, home = tempfile.mkdtemp(), tempfile.mkdtemp()
+        ctl = Controller(ws, stack_factory=lambda w: (gate.wait(10), fake_stack([GOOD]))[1], home=home); ctl.start()
+        win = MainWindow(ctl, FakeTelemetry()); win.show()
+        self.addCleanup(lambda: (gate.set(), setattr(win, "_closing", True), win.timer.stop(), win.close()))
+        core = win.mission.core
+        self.assertTrue(pump(lambda: "Booting" in core.caption, 3))             # (the widget is BORN titled STARTING: wait for the caption)
+        self.assertEqual(core.title, "STARTING"); self.assertEqual(core.footer, ""); self.assertEqual(core.field.dyn.mode, "starting")
+        gate.set()
+        self.assertTrue(pump(lambda: core.title == "READY", 5)); self.assertIn("ROUTING", core.footer)
+        def boom(w): raise RuntimeError("no providers configured")
+        ctl2 = Controller(tempfile.mkdtemp(), stack_factory=boom, home=tempfile.mkdtemp()); ctl2.start()
+        win2 = MainWindow(ctl2, FakeTelemetry()); win2.show()
+        self.addCleanup(lambda: (setattr(win2, "_closing", True), win2.timer.stop(), win2.close()))
+        self.assertTrue(pump(lambda: win2.mission.core.title == "ERROR", 5))
+        self.assertIn("no providers configured", win2.mission.core.caption); self.assertEqual(win2.mission.core.cap_level, "bad")
+        self.assertEqual(win2.mission.core.field.dyn.mode, "bad")
+
     # ---- approvals ---------------------------------------------------------------------------------------
     def test_approval_dialog_shows_exact_action_defaults_to_deny_and_deny_blocks(self):
         win, ctl, ws = self.make(responses=[tdc.Approvals.PLAN], agents={"claude": FakeAgent()})
