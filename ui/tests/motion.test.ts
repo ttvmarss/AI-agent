@@ -8,19 +8,17 @@ const run = (m: Motion, secs: number, fps = 30) => { for (let i = 0; i < secs * 
 const frame = (over: Partial<Frame>): Frame => ({ ...structuredClone(EMPTY_FRAME), ...over });
 
 describe("persona: JARVIS converses, FRIDAY executes", () => {
-  it("is JARVIS (cool) while idle and glides to FRIDAY (warm) when work starts, then back", () => {
+  it("stays one voice: persona eases slightly while working and returns when done", () => {
     const m = new Motion(DEFAULT_THEME);
     m.setMode("idle"); run(m, 4);
     expect(m.persona).toBeLessThan(0.05);
-    const [r0, , b0] = m.accent();
-    expect(b0).toBeGreaterThan(r0);
     m.setMode("working"); run(m, 0.25);
-    expect(m.persona).toBeGreaterThan(0.1); expect(m.persona).toBeLessThan(0.95);      // a glide, not a snap
-    run(m, 4);
-    expect(m.persona).toBeGreaterThan(0.97);
-    const [r1, , b1] = m.accent();
-    expect(r1).toBeGreaterThan(b1 * 2);
-    m.setMode("ok"); run(m, 4);
+    expect(m.persona).toBeGreaterThan(0.05); expect(m.persona).toBeLessThan(DEFAULT_THEME.modes.working.persona);   // a glide, not a snap
+    run(m, 5);
+    expect(m.persona).toBeGreaterThan(DEFAULT_THEME.modes.working.persona - 0.05);
+    const [r, , b] = m.accent();
+    expect(b).toBeGreaterThan(r);                                             // always cool: no orange
+    m.setMode("ok"); run(m, 5);
     expect(m.persona).toBeLessThan(0.4);
   });
   it("STOP is fast: the spin dies and the layers collapse together", () => {

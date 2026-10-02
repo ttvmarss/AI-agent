@@ -169,12 +169,12 @@ class Session:
         state = state or c.state
         v = view if view is not None else View()
         mode, title, sub, prog = model.mode_for(v, state, waiting, self._hint, c.error)
-        voice = {"state": "off", "level": 0.0, "speak": 0.0, "attentive": False, "heard": "", "note": self._voice_note}
+        voice = {"state": "off", "level": 0.0, "speak": 0.0, "attentive": False, "heard": "", "said": "", "note": self._voice_note}
         if self.voice is not None:
             try:
                 snap = self.voice.snapshot()
                 voice.update(state=snap["state"], level=min(1.0, float(snap["level"]) / 0.12) ** 0.6 if snap["level"] > 0 else 0.0,
-                             speak=min(1.0, float(snap["speak_level"])), attentive=bool(snap["attentive"]))
+                             speak=min(1.0, float(snap["speak_level"])), attentive=bool(snap["attentive"]), said=str(snap.get("said", ""))[:200])
             except Exception:
                 pass
             tr = self.voice.transcripts

@@ -8,7 +8,7 @@ import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 /** Post-processing: bloom (the light that spills from bright lines), then the projector's imperfections: a hair of chromatic aberration at the
  *  edges, scanlines, a vignette, film grain, and a horizontal-slice glitch that fires on state changes. */
 const FilmShader = {
-  uniforms: { tDiffuse: { value: null as THREE.Texture | null }, uTime: { value: 0 }, uRes: { value: new THREE.Vector2(1, 1) }, uAberr: { value: 0.003 }, uScan: { value: 1 },
+  uniforms: { tDiffuse: { value: null as THREE.Texture | null }, uTime: { value: 0 }, uRes: { value: new THREE.Vector2(1, 1) }, uAberr: { value: 0.0016 }, uScan: { value: 1 },
               uVignette: { value: 1 }, uGrain: { value: 0.012 }, uGlitch: { value: 0 } },
   vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
   fragmentShader: `
@@ -27,7 +27,7 @@ const FilmShader = {
       col.b = texture2D(tDiffuse, uv - d * k).b;
       float sl = 0.5 + 0.5 * sin(uv.y * uRes.y * 1.6);
       col *= 1.0 - uScan * 0.10 * sl;
-      col *= mix(1.0, smoothstep(1.0, 0.18, length(d * vec2(1.0, 1.1))), uVignette);
+      col *= mix(1.0, smoothstep(0.95, 0.12, length(d * vec2(1.0, 1.1))), uVignette);
       col += (h(dot(uv, vec2(12.9898, 78.233)) + uTime) - 0.5) * uGrain;
       gl_FragColor = vec4(col, 1.0);
     }`,
@@ -41,7 +41,7 @@ export class Post {
   constructor(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, w: number, h: number) {
     this.composer = new EffectComposer(renderer);
     this.composer.addPass(new RenderPass(scene, camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.6, 0.55, 0.32);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.7, 0.6, 0.22);
     this.composer.addPass(this.bloom);
     this.film = new ShaderPass(FilmShader);
     this.composer.addPass(this.film);
@@ -60,7 +60,7 @@ export class Post {
     this.film.uniforms["uTime"]!.value = t;
     this.film.uniforms["uGlitch"]!.value = this.glitch * effects.glitch;
     this.film.uniforms["uScan"]!.value = effects.scanlines;
-    this.bloom.strength = 0.6 * bloom;
+    this.bloom.strength = 0.7 * bloom;
   }
   render(dt: number) {
     this.composer.render(dt);

@@ -21,7 +21,8 @@ praxis = "praxis.__main__:main"
 praxis-desktop = "praxis.desktop.__main__:main"   # pip creates praxis-desktop.exe on Windows (no console window)
 
 [tool.setuptools]
-packages = ["praxis", "praxis.desktop", "praxis.desktop.qt", "praxis.desktop.qt.hud", "praxis.voice"]
+packages = ["praxis", "praxis.desktop", "praxis.desktop.qt", "praxis.desktop.qt.hud", "praxis.voice", "praxis.ui"]
 
 [tool.setuptools.package-data]
 "praxis.desktop.qt.hud" = ["*.json"]       # the shipped HUD design
+"praxis.ui" = ["static/*", "static/assets/*"]   # the built web interface

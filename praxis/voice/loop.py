@@ -24,6 +24,7 @@ class VoiceLoop:
         self.conductor = Conductor(actions, self.say, wake_word=wake_word, attentive_s=attentive_s, approval_s=approval_s, log=self.log, chat=brain,
                                    wake_required=wake_required)
         self.muted, self.speaking, self.thinking, self.deaf_until = False, False, False, 0.0
+        self.said, self._said_until = "", 0.0                   # the sentence being spoken right now (the interface shows it as the subtitle)
         self.level, self.speak_level, self._env, self._env_t0 = 0.0, 0.0, [], 0.0
         self.transcripts = []                 # (time, text, what it did): the log you read when something is odd
         self.last_error, self.unspoken = "", ""
@@ -98,7 +99,8 @@ class VoiceLoop:
             self.speak_level = self._env[i] if i < len(self._env) else 0.0
         else:
             self.speak_level = 0.0
-        return {"state": self.state, "level": 0.0 if self.muted else self.level, "speak_level": self.speak_level,
+        said = self.said if (self.speaking or time.monotonic() < self._said_until) else ""
+        return {"state": self.state, "level": 0.0 if self.muted else self.level, "speak_level": self.speak_level, "said": said,
                 "attentive": self.conductor.clock() < self.conductor.attentive_until}
 
     # ---- speaking -----------------------------------------------------------------------------------------------------------
@@ -153,6 +155,7 @@ class VoiceLoop:
                     return
                 self._stop_speaking.clear()
                 self._env, self._env_t0 = audio.envelope(pcm, rate), time.monotonic()
+                self.said, self._said_until = sentences[i], time.monotonic() + 1e9
                 self.speaking = True
                 self.seg.reset()
                 try:
@@ -164,6 +167,7 @@ class VoiceLoop:
                     return
                 finally:
                     self.speaking, self._env = False, []
+                    self._said_until = time.monotonic() + 1.5            # leave the last sentence on screen a moment after the voice stops
                     self.deaf_until = time.monotonic() + TAIL_S
                     self.seg.reset()
                 if self._closing:

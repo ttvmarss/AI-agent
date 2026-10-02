@@ -45,7 +45,7 @@ export class Particles {
   }
   update(m: Motion, amount: number) {
     this.mat.uniforms["uTime"]!.value = m.t;
-    this.mat.uniforms["uFlow"]!.value = Math.min(1, m.v.flow);
+    this.mat.uniforms["uFlow"]!.value = Math.min(0.5, m.v.flow * 0.5);
     this.mat.uniforms["uSpin"]!.value = m.v.spin;
     this.mat.uniforms["uAlpha"]!.value = (0.35 + 0.65 * Math.min(1, m.v.embers + 0.2)) * amount;
   }

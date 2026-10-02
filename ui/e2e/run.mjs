@@ -47,11 +47,10 @@ const title = async (page, re) => { await page.waitForFunction((s) => new RegExp
 
 await test("the key URL becomes a cookie, the interface loads, and live frames arrive", async () => {
   await withPage("goal", async (page, eng, logs) => {
-    await page.waitForSelector("#mission", { timeout: 60000 });
+    await page.waitForSelector("#stateText", { timeout: 60000 });
     await page.waitForFunction(() => window.__praxis && window.__praxis.frame.mode === "idle", null, { timeout: 60000 });
     assert.ok(!page.url().includes("?k="), "the key must not stay in the address");
     await title(page, /READY|STANDING BY/);
-    assert.match(await text(page, "#mission"), /STANDING BY/i);
     assert.match(await text(page, "#minds"), /SCRIPTED/i);
     const bad = logs.filter((l) => /pageerror/.test(l));
     assert.deepEqual(bad, []);
@@ -68,9 +67,8 @@ await test("typing a goal runs it for real: steps, checks, VERIFIED, and a log o
     await page.waitForTimeout(800);
     await title(page, /VERIFIED/);
     const mission = await text(page, "#mission");
-    assert.match(mission, /a\.txt/); assert.match(mission, /VERIFIED/i); assert.match(mission, /PASSED/i);
-    assert.match(await text(page, "#telemetry"), /1\/1/);
-    assert.match(await text(page, "#stream"), /PASS: file_exists a\.txt/);
+    assert.match(mission, /a\.txt/); assert.match(mission, /file_exists a\.txt/);
+        assert.match(await text(page, "#stream"), /PASS: file_exists a\.txt/);
     await page.screenshot({ path: path.join(out, "e2e-verified.png") });
   });
 });
@@ -120,7 +118,7 @@ await test("keys and clicks send the right commands (F2 data, F3 routing, folder
     await page.waitForSelector("#ws.on");
     await page.keyboard.press("Escape");
     assert.equal(await page.locator("#ws.on").count(), 0);
-    assert.match(await text(page, "#telemetry"), /ROUTING\s+FRUGAL/i);
+    assert.match(await text(page, "#telemetry"), /FRUGAL/i);
   });
 });
 

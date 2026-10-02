@@ -48,6 +48,7 @@ export interface Voice {
   speak: number; // 0..1 loudness of PRAXIS's own voice
   attentive: boolean;
   heard: string; // the last thing it understood you to say
+  said: string; // the sentence it is saying right now (shown as the subtitle)
   note: string; // why the voice is degraded or off, if it is
 }
 export interface LogLine {
@@ -125,7 +126,7 @@ export const EMPTY_FRAME: Frame = {
   active: "",
   brains: [],
   stats: { elapsed: "", steps: "", checks: "", brain: "", cost: "", last_call_ms: null },
-  voice: { state: "off", level: 0, speak: 0, attentive: false, heard: "", note: "" },
+  voice: { state: "off", level: 0, speak: 0, attentive: false, heard: "", said: "", note: "" },
   log: [],
   approvals: [],
   settings: { data_class: "project", strategy: "balanced", models: 0 },
@@ -178,7 +179,7 @@ export function parseFrame(raw: unknown): Frame | null {
   const v = (o["voice"] ?? {}) as Record<string, unknown>;
   const vs: VoiceState[] = ["off", "listening", "hearing", "thinking", "speaking", "muted", "offline"];
   f.voice = { state: vs.includes(v["state"] as VoiceState) ? (v["state"] as VoiceState) : "off", level: Math.min(1, Math.max(0, num(v["level"], 0))),
-              speak: Math.min(1, Math.max(0, num(v["speak"], 0))), attentive: !!v["attentive"], heard: str(v["heard"], "").slice(0, 200), note: str(v["note"], "").slice(0, 200) };
+              speak: Math.min(1, Math.max(0, num(v["speak"], 0))), attentive: !!v["attentive"], heard: str(v["heard"], "").slice(0, 200), said: str(v["said"], "").slice(0, 200), note: str(v["note"], "").slice(0, 200) };
   f.log = arr<LogLine>(o["log"]).slice(-40).map((l) => ({ id: num(l?.id, 0), time: str(l?.time, ""), text: str(l?.text, "").slice(0, 160), level: str(l?.level, "info") as Level }));
   f.approvals = arr<Approval>(o["approvals"]).slice(0, 5).map((a) => ({ id: str(a?.id, ""), tool: str(a?.tool, ""), cls: num(a?.cls, 3), risky: !!a?.risky,
     reason: str(a?.reason, "").slice(0, 300), summary: str(a?.summary, "").slice(0, 200), detail: str(a?.detail, "").slice(0, 600) }));

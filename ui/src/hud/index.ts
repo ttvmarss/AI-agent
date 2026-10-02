@@ -1,46 +1,42 @@
 import type { Command, DataClass, Frame, Strategy } from "../protocol";
 import type { Motion } from "../motion";
-import type { Theme } from "../theme";
 import { h } from "./dom";
-import { TopBar, VoiceStrip } from "./chrome";
-import { AuthModal, BootOverlay, Callouts, WorkspaceDialog } from "./overlays";
+import { CaptionStrip, TopBar } from "./chrome";
+import { AuthModal, BootOverlay, WorkspaceDialog } from "./overlays";
 import { Minds, Mission, Stream, Telemetry } from "./panels";
-import type { Scene } from "./types";
 
 const DATA_CYCLE: DataClass[] = ["project", "private", "open"];
 const STRATEGY_CYCLE: Strategy[] = ["balanced", "frugal", "quality"];
 
-/** The glass interface over the hologram. It owns the DOM, turns each Frame into words and numbers, and turns keys and clicks into Commands. */
+/** The interface over the orb. It owns the DOM, turns each Frame into words and numbers, and turns keys and clicks into Commands. */
 export class Hud {
-  private readonly top: TopBar;
+  private readonly top = new TopBar();
   private readonly mission = new Mission();
   private readonly stream = new Stream();
-  private readonly minds: Minds;
+  private readonly minds = new Minds();
   private readonly telemetry: Telemetry;
-  private readonly voice: VoiceStrip;
-  private readonly callouts: Callouts;
+  private readonly caption: CaptionStrip;
   private readonly auth: AuthModal;
   private readonly boot = new BootOverlay();
   private readonly ws: WorkspaceDialog;
-  private readonly link = h("div", { class: "chip", style: "position:fixed;left:50%;top:84px;transform:translateX(-50%);display:none;--vc:var(--c-warn);--vc-rgb:var(--c-warn-rgb);z-index:15" }, "<i></i>ENGINE LINK LOST · RECONNECTING");
+  private readonly link = h("div", { class: "chip", style: "position:fixed;left:50%;top:70px;transform:translateX(-50%);display:none;--vc:var(--c-warn);--vc-rgb:var(--c-warn-rgb);z-index:15" }, "<i></i>ENGINE LINK LOST · RECONNECTING");
   private frame: Frame | null = null;
 
-  constructor(root: HTMLElement, private readonly theme: Theme, private readonly send: (c: Command) => void) {
-    this.top = new TopBar(theme);
-    this.voice = new VoiceStrip((text) => this.send({ cmd: "submit", text }));
-    this.minds = new Minds(() => undefined);
+  constructor(root: HTMLElement, private readonly send: (c: Command) => void) {
+    this.caption = new CaptionStrip((text) => this.send({ cmd: "submit", text }));
     this.telemetry = new Telemetry((what) => this.cycle(what), () => this.openWorkspace());
     const left = h("div", { id: "left" });
-    left.append(this.mission.root, this.stream.root);
+    left.append(this.mission.root);
     const right = h("div", { id: "right" });
-    right.append(this.minds.root, this.telemetry.root);
+    right.append(this.minds.root);
     const mid = h("div", { id: "mid" });
-    mid.append(this.voice.root);
-    root.append(this.top.root, left, mid, right);
-    this.callouts = new Callouts(this.minds);
+    mid.append(this.caption.root);
+    const foot = h("footer", { id: "foot" });
+    foot.append(this.stream.root, this.telemetry.root);
+    root.append(this.top.root, left, mid, right, foot);
     this.auth = new AuthModal((id, ok) => this.send({ cmd: "approve", id, ok }));
     this.ws = new WorkspaceDialog((path) => this.send({ cmd: "open_workspace", path }));
-    document.body.append(this.callouts.svg, this.auth.root, this.boot.root, this.ws.root, this.link);
+    document.body.append(this.auth.root, this.boot.root, this.ws.root, this.link);
     addEventListener("keydown", (e) => this.key(e));
   }
 
@@ -75,15 +71,17 @@ export class Hud {
     this.link.style.display = ok ? "none" : "";
   }
 
-  update(f: Frame, scene: Scene, m: Motion, dt: number) {
+  update(f: Frame, m: Motion, dt: number) {
     this.frame = f;
-    this.top.update(f, m, dt);
+    const [r, g, b] = m.accent().map(Math.round) as [number, number, number];
+    const root = document.documentElement.style;
+    root.setProperty("--accent-rgb", `${r} ${g} ${b}`);
+    this.top.update(f);
+    this.caption.update(f, m, dt);
     this.mission.update(f);
-    this.stream.update(f);
     this.minds.update(f);
+    this.stream.update(f);
     this.telemetry.update(f);
-    this.voice.update(f, dt);
-    this.callouts.update(f, scene, m);
     this.auth.update(f.approvals[0]);
     this.boot.update(m, f.mode !== "starting");
   }

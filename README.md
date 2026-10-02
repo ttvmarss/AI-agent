@@ -9,7 +9,7 @@ Claude less, with a native desktop command center. The kernel is pure Python 3.1
 **Start here: [`docs/MORNING-GUIDE.md`](docs/MORNING-GUIDE.md)** (Windows setup in ~20 minutes).
 Design: [`docs/ARCHITECTURE-REV0.md`](docs/ARCHITECTURE-REV0.md).
 
-![PRAXIS: ready (JARVIS) and working (FRIDAY)](docs/media/ui-idle.jpg)
+![PRAXIS: ready (listening) and working](docs/media/ui-idle.jpg)
 ![Working: the real plan, brains and numbers](docs/media/ui-working.jpg)
 
 *The core, rendered by the real widget: every colour, arc and stream is real state (see the morning guide).*
@@ -36,18 +36,15 @@ goal -> recall (memory) -> plan (model A) -> observe files (labeled UNTRUSTED) -
   documented data terms and the source of its limits (`python -m praxis free`).
 * **Hardware-aware local models**: reads your real VRAM/RAM, models speed with bandwidth physics (MoE vs dense), then
   *measures* tokens/s and quality. Dated, sourced catalog of Ollama models.
-* **The interface is a real front end, built the way Tony would show it.** TypeScript + WebGL (Three.js), in its own app window (Edge or
-  Chrome, which you already have; nothing to install). PRAXIS's heart is an **arc reactor in exploded view**: housing, ten coils, scale ring,
-  triangle and core float apart along the axis, wireframe and glowing, over a holo table with a projector beam, dust and bloom, inside three
-  tilted **gyro rings that are the real PLAN / ACT / VERIFY pipeline** (one arc per real step or check). **JARVIS** (cool ice-blue) is in
-  charge while it listens, talks and idles; **FRIDAY** (warm amber) takes over while a goal executes; the hand-over glides. Glass panels
-  carry the real mission (goal, steps, checks), your real AIs (budget meters, rest clocks, a stream of sparks to the one being called), the
-  real event stream and the real numbers (elapsed, steps, checks, brain, cost, last call). Approvals are an in-scene **AUTHORISATION
-  REQUIRED** card with the exact action and Deny holding the focus. **Esc** stops (kills in-flight calls, restores the workspace), **F2** data
-  class, **F3** routing, **F4** mute, **Ctrl+O** folder, **Ctrl+R** resume. The look is data (`ui/src/theme.json`; override it in
-  `~/.praxis/theme.json`); the source is in `ui/` (`npm run dev` for a live-reload mock), the build is committed, the engine side is
-  `praxis/ui/` (a local-only, key-and-cookie-locked server streaming the engine's real state). The older Qt window is still available as
-  `python -m praxis.desktop --qt`.
+* **The interface is a real front end, kept deliberately simple.** TypeScript + WebGL (Three.js), in its own app window (Edge or Chrome,
+  which you already have; nothing to install). One ice-blue voice ring is the whole screen: it wavers with your voice while it listens, with
+  its own while it speaks (the sentence types underneath), spins up while a goal runs, and flashes on success. Everything else is quiet and
+  real: your AIs on the right, the mission (steps and checks) only while there is a goal, a three-line event stream and one line of numbers.
+  Approvals are an in-scene **AUTHORISATION REQUIRED** card with the exact action and Deny holding the focus. **Esc** stops (kills in-flight
+  calls, restores the workspace), **F2** data class, **F3** routing, **F4** mute, **Ctrl+O** folder, **Ctrl+R** resume. The look is data
+  (`ui/src/theme.json`; override it in `~/.praxis/theme.json`); the source is in `ui/` (`npm run dev` for a live-reload mock), the build is
+  committed, the engine side is `praxis/ui/` (a local-only, key-and-cookie-locked server streaming the engine's real state). The older Qt
+  window is still available as `python -m praxis.desktop --qt`.
 
 ## Talk to it
 

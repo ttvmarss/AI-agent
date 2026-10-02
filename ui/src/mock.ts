@@ -35,7 +35,7 @@ function base(): Frame {
   f.settings = { data_class: "project", strategy: "balanced", models: 12 };
   f.info = { build: "e67f399 (claude/praxis-architecture-rev0)", workspace: "C:\\Users\\tikto\\PRAXIS\\workspace", workspace_name: "workspace", hint: "",
              sandbox: "unshare", sandbox_strong: true, recent: ["C:\\Users\\tikto\\PRAXIS\\workspace", "C:\\Users\\tikto\\AI-agent"], can_type: false };
-  f.voice = { state: "listening", level: 0, speak: 0, attentive: false, heard: "", note: "" };
+  f.voice = { state: "listening", level: 0, speak: 0, attentive: false, heard: "", said: "", note: "" };
   return f;
 }
 
@@ -57,8 +57,8 @@ export function mockFrame(scenario: Scenario, t = 0): Frame {
   switch (scenario) {
     case "starting": mode("starting", "STARTING", "detecting hardware, tools and sandbox"); f.log = f.log.slice(0, 1); f.brains = []; f.voice.state = "off"; break;
     case "idle": mode("idle", "READY", "describe an outcome"); break;
-    case "listening": mode("idle", "READY", ""); f.voice = { state: "hearing", level: wave(0.7), speak: 0, attentive: true, heard: "", note: "" }; break;
-    case "speaking": mode("idle", "READY", ""); f.voice = { state: "speaking", level: 0, speak: wave(0.8), attentive: false, heard: "what time is it", note: "" }; break;
+    case "listening": mode("idle", "READY", ""); f.voice = { state: "hearing", level: wave(0.7), speak: 0, attentive: true, heard: "", said: "", note: "" }; break;
+    case "speaking": mode("idle", "READY", ""); f.voice = { state: "speaking", level: 0, speak: wave(0.8), attentive: false, heard: "what time is it", said: "It is nineteen forty-one. Anything else?", note: "" }; break;
     case "working":
       mode("working", "RUNNING", "step 2 of 4"); withGoal(["verified", "running", "pending", "pending"], [true]);
       f.active = "claude/sonnet"; f.voice.state = "thinking";

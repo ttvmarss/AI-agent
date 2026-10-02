@@ -99,13 +99,11 @@ When a provider says "limit reached", it rests until the time the provider state
 
 ![PRAXIS working: the exploded reactor, the real plan, your AIs and the numbers](media/ui-working.jpg)
 
-Open PRAXIS (the **PRAXIS** shortcut, or type `praxis` in a terminal). It opens in its own window (Edge or Chrome in app mode; nothing to install). You see the hologram first: PRAXIS's heart is an **arc reactor in exploded view**, floating over a holo table, inside three tilted rings. Nothing on it is invented.
+Open PRAXIS (the **PRAXIS** shortcut, or type `praxis` in a terminal). It opens in its own window (Edge or Chrome in app mode; nothing to install). You see one thing: a **voice ring**. Nothing on it is invented.
 
-* **Two minds, one core.** **JARVIS** (cool ice-blue) is in charge while PRAXIS idles, listens and talks; **FRIDAY** (amber) takes over while a goal runs. The two names top-left show which is lit; the hand-over glides.
-* **The three rings are the kernel's real pipeline.** One arc per real step (ACT) and per real check (VERIFY), coloured by its state: grey = waiting its turn, bright with a comet = running, amber = needs you, green = verified, red = failed. When the goal verifies, the VERIFY ring seals shut and a shockwave runs out across the table.
-* **MISSION (left)** is the goal with its real steps and checks. **MINDS (right)** is your AIs: free and local ones green, subscriptions violet; the meter is how much of the allowance is spent, a ring means it is resting after a limit, and a stream of sparks runs from the core to the one being called right now. **EVENT STREAM** and **TELEMETRY** (elapsed, steps, checks, brain, cost, last call) fill the corners. On a narrow window the panels fold away and only the hologram remains.
+* **The ring is the voice.** It wavers with the real audio: yours while it listens, its own while it speaks (the sentence types underneath). While a goal runs it spins up and a progress arc fills; when the goal verifies it flashes and a ripple runs out; on failure it goes red.
+* **MISSION (left)** appears only while there is a goal: its real steps and checks. **MINDS (right)** is your AIs: the ring shows how much of the allowance is spent, and a resting clock appears after a limit. A three-line **event stream** and one line of **numbers** (elapsed, steps, checks, brain, cost) sit in the corners.
 * **Authorisation.** When PRAXIS needs your say-so, an **AUTHORISATION REQUIRED** card shows the exact action. Deny has the focus; Esc denies; Approve unlocks after a moment so nothing is approved unread. You can also answer by voice (say the wake word, then approve or deny).
-* **The ring of bars around the core is the real audio**: yours while it listens, its own while it speaks. Every real event flares the core and sends a ripple across the table. Click the core and it answers.
 * **Keys:** Esc stop · F2 data class · F3 routing · F4 mic · Ctrl+O folder · Ctrl+R resume. If voice cannot start, a typing line appears so the app is never unusable.
 * **You can restyle it.** The look is data: `ui/src/theme.json` (colours, fonts, effect strengths, how each state moves the machine). Put your changes in `~/.praxis/theme.json`. To change the design itself, work in `ui/` (see `ui/README.md`: `npm run dev` gives a live-reload preview with a scripted engine).
 

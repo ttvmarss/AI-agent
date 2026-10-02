@@ -1810,3 +1810,13 @@ CI (`.github/workflows/ci.yml`): engine tests, strict typecheck, unit tests, a b
 steps, and live voice (no microphone or speakers here); the visuals were reviewed through software-rendered WebGL screenshots only.
 
 *End of Revision Zero (with addenda 38 to 51). Failures get logged, not hidden.*
+
+## 52. Status addendum — UI v2: one voice ring (2026-10-02)
+
+Feedback on §51's interface: too much, and the amber felt out of place. v2 keeps the web stack and the engine/session/server unchanged and replaces the scene and HUD:
+
+* **One hue** (ice-blue, `ui/src/theme.json`). Amber/violet remain only as *status* colours (waiting, resting, error), never as a theme.
+* **Hero = a voice ring** (`ui/src/scene/orb.ts`): five wavering rings whose amplitude follows the real audio level (`voice.level`), a core and halo, a progress arc and step nodes while a goal runs, a flash and ripple on verification. The spoken sentence arrives as `voice.said` (new field from `VoiceLoop.snapshot()`), shown typed under the state word.
+* **HUD** reduced to: caption (`hud/state.ts`, pure and unit-tested), minds column, a mission card only while a goal exists, three log lines, one telemetry line, the approval card.
+* Removed: exploded reactor, gyro rings, callouts, persona chips. Verified: tsc, 24 vitest, 6 Playwright end-to-end checks against the real engine, 632 Python tests. Not verified: real GPU rendering and the Windows window (screenshots are SwiftShader).
+* Packaging fix: `praxis.ui` and its built `static/` assets are now listed in `pyproject.toml`.

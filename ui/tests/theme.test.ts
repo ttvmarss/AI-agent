@@ -10,7 +10,7 @@ describe("theme.json", () => {
       expect(DEFAULT_THEME.modeLabels[m]).toBeTruthy();
     }
     expect(DEFAULT_THEME.modes.idle.persona).toBe(0);      // JARVIS converses
-    expect(DEFAULT_THEME.modes.working.persona).toBe(1);   // FRIDAY executes
+    expect(DEFAULT_THEME.modes.working.persona).toBeGreaterThan(0);   // a little more intent while executing
   });
   it("a user override changes what it names and ignores everything that does not fit", () => {
     const t = mergeTheme({ colors: { jarvis: "#ff00ff", nonsense: "#000" }, effects: { bloom: 0.2, glitch: "lots" }, modes: { idle: { spin: 0.5, bogus: 9 } }, fonts: 7, extra: { a: 1 } });
@@ -27,8 +27,8 @@ describe("theme.json", () => {
   });
   it("turns the theme into CSS custom properties", () => {
     const v = cssVars(DEFAULT_THEME);
-    expect(v["--c-jarvis"]).toBe("#59d8ff");
-    expect(v["--c-jarvis-rgb"]).toBe("89 216 255");
+    expect(v["--c-jarvis"]).toBe("#5fd0ff");
+    expect(v["--c-jarvis-rgb"]).toBe("95 208 255");
     expect(v["--font-display"]).toContain("Rajdhani");
   });
   it("colour helpers", () => {

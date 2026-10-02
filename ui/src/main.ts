@@ -24,7 +24,7 @@ async function boot() {
   let frame: Frame = EMPTY_FRAME;
   const transport = live ? new LiveTransport() : null;
   const send = (c: Command) => { sent.push(c); transport?.send(c); };
-  const hud = new Hud(document.getElementById("hud")!, theme, send);
+  const hud = new Hud(document.getElementById("hud")!, send);
   window.__praxis = { frame, sent };
   transport?.start((f) => { frame = f; window.__praxis!.frame = f; }, (ok) => hud.setLinked(ok));
 
@@ -34,7 +34,7 @@ async function boot() {
     t += dt;
     if (mock) frame = frameAt(t);
     scene.update(frame, dt);
-    hud.update(frame, scene, scene.motion, dt);
+    hud.update(frame, scene.motion, dt);
   };
   const size = () => scene.resize(innerWidth, innerHeight, Math.min(devicePixelRatio, 2));
   addEventListener("resize", size);
