@@ -64,7 +64,7 @@ def run(stack, vcfg, out=print):
             ok = False
         else:
             from ..voice.stt import WhisperRecognizer
-            rec = WhisperRecognizer(vcfg.get("stt_model", "base.en"), root=os.path.join(tts.voice_dir(), "whisper"))
+            rec = WhisperRecognizer(vcfg.get("stt_model", "auto"), root=os.path.join(tts.voice_dir(), "whisper"), device=vcfg.get("stt_device", "auto"))
             t0 = time.time(); heard = rec.transcribe(buf)
             out(f"[ok]   recogniser heard: {heard!r}   ({time.time() - t0:.1f} s)")
     except Exception as e:

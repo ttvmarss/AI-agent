@@ -1,5 +1,6 @@
 """The voice logic is pure Python: audio, VAD, wake word, intents, narration and the conductor's safety rules."""
 import array, math, os, random, tempfile, types, unittest
+from unittest import mock
 
 from praxis.voice import audio, narrator, wake
 from praxis.voice.audio import RATE, Segmenter
@@ -350,6 +351,65 @@ class OpenMode(unittest.TestCase):
         self.assertEqual(self.c.hear("stop"), "stop"); self.assertIn(("stop",), self.a.calls)
         self.a._state = "idle"; self.t[0] += 10
         self.assertEqual(self.c.hear("mute"), "mute")
+
+
+class Latency(unittest.TestCase):
+    """Speech should START as early as possible: the first chunk decides it, and the recogniser must not pay for lazy start-up."""
+
+    def test_a_long_opening_sentence_is_broken_at_a_comma_so_speech_starts_sooner(self):
+        from praxis.voice.tts import split_sentences
+        t = "Well, the thing about mutexes is that, in a nutshell, they let one thread at a time in, which keeps everything tidy. Anything else?"
+        parts = split_sentences(t)
+        self.assertGreaterEqual(len(parts), 3); self.assertLessEqual(len(parts[0]), 70)
+        self.assertEqual(" ".join(parts).split(), t.split())                              # nothing lost, nothing reordered
+        self.assertEqual(split_sentences("Hi. Yes? Fine."), ["Hi. Yes? Fine."])                   # tiny pieces are still merged, so nothing sounds clipped
+        short = "Done. 2 checks passed."
+        self.assertEqual(" ".join(split_sentences(short)), short)
+
+    @unittest.skipUnless(__import__('importlib').util.find_spec('numpy'), 'the forced GPU warm-up inference needs numpy (always present with faster-whisper)')
+    def test_the_recogniser_uses_the_gpu_when_it_works_and_quietly_falls_back_when_it_does_not(self):
+        from praxis.voice.stt import WhisperRecognizer
+        built = []
+        class Seg:  # a transcription segment
+            text, no_speech_prob, avg_logprob = "hello", 0.0, -0.2
+        class Model:
+            def __init__(self, name, device, compute_type, download_root=None):
+                built.append((name, device, compute_type))
+                if device == "cuda" and Model.cuda_broken:
+                    raise RuntimeError("Library cublas64_12.dll is not found")
+            def transcribe(self, audio, **k): return iter([Seg()]), None
+        Model.cuda_broken = False
+        r = WhisperRecognizer("auto", device="auto", factory=Model, cuda_count=lambda: 1); r.load()
+        self.assertEqual((r.device_used, r.model_used, r.fallback_reason), ("cuda", "small.en", "")); self.assertEqual(built, [("small.en", "cuda", "float16")])
+        built.clear(); Model.cuda_broken = True
+        r = WhisperRecognizer("auto", device="auto", factory=Model, cuda_count=lambda: 1); r.load()
+        self.assertEqual((r.device_used, r.model_used), ("cpu", "base.en")); self.assertIn("GPU not usable", r.fallback_reason); self.assertIn("cublas", r.fallback_reason)
+        self.assertEqual(built, [("small.en", "cuda", "float16"), ("base.en", "cpu", "int8")])
+        built.clear()
+        r = WhisperRecognizer("auto", device="auto", factory=Model, cuda_count=lambda: 0); r.load()                 # no GPU at all: straight to the CPU
+        self.assertEqual(built, [("base.en", "cpu", "int8")]); self.assertEqual(r.fallback_reason, "")
+        built.clear(); r = WhisperRecognizer("tiny.en", device="cpu", factory=Model); r.load(); self.assertEqual(built, [("tiny.en", "cpu", "int8")])      # explicit choices are respected
+        r.warm()                                                                                                    # warm-up runs one inference
+
+    def test_a_cpu_that_cannot_load_raises_instead_of_hiding_it(self):
+        from praxis.voice.stt import WhisperRecognizer
+        class Bad:
+            def __init__(self, *a, **k): raise OSError("no model files")
+        with self.assertRaises(OSError):
+            WhisperRecognizer("auto", device="auto", factory=Bad, cuda_count=lambda: 0).load()
+
+    def test_cuda_library_folders_are_found_under_site_packages(self):
+        import tempfile
+        from praxis.voice.stt import add_cuda_dll_dirs
+        root = tempfile.mkdtemp(); d = os.path.join(root, "nvidia", "cublas", "bin"); os.makedirs(d); os.makedirs(os.path.join(root, "nvidia", "cudnn", "bin"))
+        with mock.patch.dict(os.environ, {"PATH": ""}):
+            added = add_cuda_dll_dirs([root])
+            self.assertEqual(sorted(added), sorted([d, os.path.join(root, "nvidia", "cudnn", "bin")])); self.assertIn(d, os.environ["PATH"])
+        self.assertEqual(add_cuda_dll_dirs([tempfile.mkdtemp()]), [])
+
+    def test_the_listener_waits_half_a_second_not_more_before_it_decides_you_have_finished(self):
+        from praxis.voice.audio import Segmenter
+        self.assertLessEqual(Segmenter().hang_frames * 30, 510)
 
 
 class Hallucination(unittest.TestCase):

@@ -24,6 +24,9 @@ def looping(text):
 
 
 class Recognizer:
+    def warm(self):
+        pass
+
     def transcribe(self, pcm16):          # 16 kHz mono int16 bytes -> text ("" if nothing credible was said)
         raise NotImplementedError
 
@@ -38,17 +41,90 @@ class FakeRecognizer(Recognizer):
         return self.texts.pop(0) if self.texts else ""
 
 
+def add_cuda_dll_dirs(roots=None):
+    """On Windows the CUDA libraries that `pip install nvidia-cublas-cu12 nvidia-cudnn-cu12` provides live under site-packages/nvidia/*/bin and
+    are not on the DLL search path: add them, so the speech recogniser can use the GPU. Returns the folders added."""
+    import glob
+    import os
+    import site
+    import sys
+    roots = roots if roots is not None else list(dict.fromkeys(sys.path + list(site.getsitepackages() if hasattr(site, "getsitepackages") else []) +
+                                                             [site.getusersitepackages()] if hasattr(site, "getusersitepackages") else sys.path))
+    added = []
+    for r in roots:
+        for d in glob.glob(os.path.join(str(r), "nvidia", "*", "bin")):
+            if os.path.isdir(d) and d not in added:
+                try:
+                    if hasattr(os, "add_dll_directory"):
+                        os.add_dll_directory(d)
+                except OSError:
+                    pass
+                os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH", "")
+                added.append(d)
+    return added
+
+
 class WhisperRecognizer(Recognizer):
-    def __init__(self, model="base.en", root=None, device="cpu", compute_type="int8"):
+    """faster-whisper. device "auto" tries the GPU first (about 5 to 10 times faster per utterance) and quietly falls back to the CPU if the
+    CUDA libraries are missing; model "auto" means small.en on the GPU (more accurate, still quick) and base.en on the CPU."""
+
+    def __init__(self, model="base.en", root=None, device="cpu", compute_type="int8", factory=None, cuda_count=None):
         self.model_name, self.root, self.device, self.compute = model, root, device, compute_type
+        self.factory, self._cuda_count = factory, cuda_count
+        self.device_used, self.model_used, self.fallback_reason = "", "", ""
         self._m, self._lock = None, threading.Lock()
+
+    def _cuda_devices(self):
+        if self._cuda_count is not None:
+            return self._cuda_count()
+        try:
+            add_cuda_dll_dirs()
+            import ctranslate2
+            return ctranslate2.get_cuda_device_count()
+        except Exception:
+            return 0
+
+    def _build(self, model, device, compute):
+        factory = self.factory
+        if factory is None:
+            from faster_whisper import WhisperModel as factory
+        m = factory(model, device=device, compute_type=compute, download_root=self.root)
+        if device == "cuda":                       # a missing CUDA library only shows up on the first real inference: force it now
+            import numpy as np
+            segs, _ = m.transcribe(np.zeros(16000, dtype=np.float32), language="en", beam_size=1, without_timestamps=True)
+            list(segs)
+        return m
 
     def load(self):
         with self._lock:
-            if self._m is None:
-                from faster_whisper import WhisperModel
-                self._m = WhisperModel(self.model_name, device=self.device, compute_type=self.compute, download_root=self.root)
-        return self._m
+            if self._m is not None:
+                return self._m
+            plans = []
+            if self.device == "auto":
+                if self._cuda_devices() > 0:
+                    plans.append(("small.en" if self.model_name == "auto" else self.model_name, "cuda", "float16"))
+                plans.append(("base.en" if self.model_name == "auto" else self.model_name, "cpu", self.compute))
+            else:
+                plans.append(("base.en" if self.model_name == "auto" else self.model_name, self.device, self.compute))
+            err = None
+            for model, device, compute in plans:
+                try:
+                    self._m = self._build(model, device, compute)
+                    self.device_used, self.model_used = device, model
+                    if err is not None:
+                        self.fallback_reason = f"GPU not usable ({type(err).__name__}: {str(err)[:120]}): using the CPU"
+                    return self._m
+                except Exception as e:
+                    err = e
+                    if device == "cpu" or (plans and (model, device, compute) == plans[-1]):
+                        raise
+            raise err
+
+    def warm(self):
+        """Run one tiny inference so the first real utterance does not pay for lazy initialisation."""
+        import numpy as np
+        segs, _ = self.load().transcribe(np.zeros(8000, dtype=np.float32), language="en", beam_size=1, without_timestamps=True)
+        list(segs)
 
     def transcribe(self, pcm16):
         import numpy as np

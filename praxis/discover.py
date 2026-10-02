@@ -3,6 +3,7 @@
 Only well-known install locations are looked at, nothing is ever executed from a folder PRAXIS merely guessed at without a check:
 a candidate for the Devin CLI must answer `--help` with the non-interactive flag (`--print`), so that the Devin Desktop *editor
 launcher* (which opens a window) can never be mistaken for the command-line agent."""
+from . import cache
 import os
 import shutil
 import subprocess
@@ -53,13 +54,21 @@ def candidates(name, env=None, isdir=os.path.isdir, listdir=os.listdir, walk=os.
 
 def looks_like_devin_cli(path, run=None, timeout=20):
     """True only if the program documents `--print`: the command-line agent, not the editor launcher."""
+    run_is_default = run is None
     run = run or (lambda argv: subprocess.run(argv, capture_output=True, text=True, timeout=timeout, encoding="utf-8", errors="replace",
                                               stdin=subprocess.DEVNULL))
+    def ask():
+        try:
+            r = run([path, "--help"])
+            return "--print" in ((r.stdout or "") + (r.stderr or ""))
+        except Exception:
+            return None                                   # not cached: try again next time
     try:
-        r = run([path, "--help"])
-        return "--print" in ((r.stdout or "") + (r.stderr or ""))
-    except Exception:
-        return False
+        st = os.stat(path)
+        stamp = f"{st.st_mtime:.0f}:{st.st_size}"         # a new version of the program is checked afresh
+    except OSError:
+        return bool(ask())
+    return bool(cache.get("devin_cli:" + path, ask, ttl_s=90 * 86400, stamp=stamp) if run_is_default else ask())
 
 
 def find(name, env=None, exists=os.path.isfile, verify=None, **kw):

@@ -75,7 +75,7 @@ class Segmenter:
     """Cuts a continuous stream into utterances. An adaptive noise floor means a fan or a quiet room both work; a short
     pre-roll keeps the first syllable; a hangover keeps the last; clicks and coughs shorter than min_speech_ms are dropped."""
 
-    def __init__(self, rate=RATE, frame_ms=30, min_speech_ms=280, hangover_ms=600, max_ms=14000, preroll_ms=300,
+    def __init__(self, rate=RATE, frame_ms=30, min_speech_ms=280, hangover_ms=500, max_ms=14000, preroll_ms=300,
                  margin=3.2, floor_min=0.006):
         self.rate, self.fb = rate, int(rate * frame_ms / 1000) * 2
         self.min_frames = max(1, min_speech_ms // frame_ms)

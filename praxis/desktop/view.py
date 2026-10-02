@@ -2,6 +2,7 @@
 
 The desktop app never keeps its own notion of state: every pixel is derived from events (design law 3: the log is truth).
 """
+import copy
 import time
 from dataclasses import dataclass, field
 
@@ -115,76 +116,91 @@ def summarize(e):
     return f"{t}", "info"
 
 
-def build_view(events):
-    """Fold the events of the most recent goal into a View."""
-    last = None
-    for e in events:
-        if e.type == "goal.intent":
-            last = e.goal_id
-    if last is None:
-        return View()
-    v = View(goal_id=last, status="PLANNING")
-    waiting = None
-    for e in (x for x in events if x.goal_id == last):
+class ViewFolder:
+    """Folds events into the View of the most recent goal, ONE EVENT AT A TIME. The window polls ten times a second; re-reading and re-folding
+    every event of a long goal on each poll (6,000 events took 60 ms) would eat the main thread, so the fold is kept and only new events are fed."""
+
+    def __init__(self):
+        self.v, self.waiting = View(), None
+
+    def feed(self, events):
+        for e in events:
+            if e.type == "goal.intent":                       # a new goal starts: everything before it is history
+                self.v, self.waiting = View(goal_id=e.goal_id, status="PLANNING"), None
+            elif e.goal_id != self.v.goal_id or not self.v.goal_id:
+                continue
+            self._fold(e)
+        return self
+
+    def view(self):
+        """The current View (a copy, so the WAITING FOR YOU adjustment never leaks into the running fold)."""
+        v = copy.copy(self.v)
+        if v.status in ("RUNNING", "PLANNING") and self.waiting:
+            v.status = "WAITING FOR YOU"
+        return v
+
+    def _fold(self, e):
         t, p = e.type, e.payload
         if t == "goal.intent":
-            v.goal_text = p.get("text", "")
+            self.v.goal_text = p.get("text", "")
         elif t == "plan.accepted":
-            v.steps = [StepView(s["id"], s["tool"], _args_summary(s["tool"], s.get("args")), deps=list(s.get("deps", [])))
+            self.v.steps = [StepView(s["id"], s["tool"], _args_summary(s["tool"], s.get("args")), deps=list(s.get("deps", [])))
                        for s in p.get("plan", {}).get("steps", [])]
-            v.evidence, v.rolled_back, v.tainted = [], False, bool(p.get("tainted"))
-            v.status = "PLANNING"
+            self.v.evidence, self.v.rolled_back, self.v.tainted = [], False, bool(p.get("tainted"))
+            self.v.status = "PLANNING"
         elif t == "checkpoint":
-            v.checkpoint = p.get("id", "")
-            v.status = "RUNNING"
+            self.v.checkpoint = p.get("id", "")
+            self.v.status = "RUNNING"
         elif t == "model.try":
-            v.active_provider = p.get("provider", "")
+            self.v.active_provider = p.get("provider", "")
         elif t == "model.call":
-            v.cost += float(p.get("cost_usd") or 0)
-            if p.get("provider") == v.active_provider:
-                v.active_provider = ""
+            self.v.cost += float(p.get("cost_usd") or 0)
+            if p.get("provider") == self.v.active_provider:
+                self.v.active_provider = ""
         elif t == "step.intent":
-            s = _step(v, p.get("step"))
+            s = _step(self.v, p.get("step"))
             if s:
                 s.state = "running"
         elif t == "guard.decision":
-            s = _step(v, p.get("step"))
+            s = _step(self.v, p.get("step"))
             if s:
                 s.cls = p.get("class", 0)
                 if p.get("verdict") == "DENY":
                     s.state = "denied"
                 elif p.get("verdict") == "ESCALATE":
-                    s.state, waiting = "waiting", p.get("step")
+                    s.state, self.waiting = "self.waiting", p.get("step")
         elif t == "guard.authorization":
-            s = _step(v, p.get("step"))
-            waiting = None
+            s = _step(self.v, p.get("step"))
+            self.waiting = None
             if s:
                 s.state = "running" if p.get("verdict") == "ALLOW" else "denied"
         elif t == "tool.result":
-            s = _step(v, p.get("step"))
+            s = _step(self.v, p.get("step"))
             if s:
                 s.state = "ran" if p.get("ok") else "failed"
         elif t == "verify.result":
-            v.evidence.append({"claim": p.get("claim", ""), "passed": bool(p.get("passed"))})
-            s = _step(v, p.get("step")) if p.get("step") else None
+            self.v.evidence.append({"claim": p.get("claim", ""), "passed": bool(p.get("passed"))})
+            s = _step(self.v, p.get("step")) if p.get("step") else None
             if s and s.state in ("ran", "running"):
                 s.state = "verified" if p.get("passed") else "failed"
         elif t == "rollback":
-            v.rolled_back = True
-            for s in v.steps:
+            self.v.rolled_back = True
+            for s in self.v.steps:
                 if s.state in ("ran", "verified", "running"):
                     s.state = "rolled back"
         elif t == "goal.report":
-            v.active_provider = ""
-            v.status = p.get("status", "FAILED")
-            v.reason = p.get("reason", "")
-            v.rolled_back = v.rolled_back or bool(p.get("rolled_back"))
-            waiting = None
+            self.v.active_provider = ""
+            self.v.status = p.get("status", "FAILED")
+            self.v.reason = p.get("reason", "")
+            self.v.rolled_back = self.v.rolled_back or bool(p.get("rolled_back"))
+            self.waiting = None
         elif t == "goal.cancelled":
-            v.rolled_back = bool(p.get("rolled_back")) or v.rolled_back
-    if v.status in ("RUNNING", "PLANNING") and waiting:
-        v.status = "WAITING FOR YOU"
-    return v
+            self.v.rolled_back = bool(p.get("rolled_back")) or self.v.rolled_back
+
+
+def build_view(events):
+    """Fold the events of the most recent goal into a View."""
+    return ViewFolder().feed(events).view()
 
 
 def _step(v, sid):

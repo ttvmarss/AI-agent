@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass, field
+from . import cache
 
 GB = 2**30
 
@@ -114,25 +115,37 @@ def _cpu_name():
     except OSError:
         pass
     if sys.platform.startswith("win"):
-        try:  # the marketing name ("AMD Ryzen 7 7700 8-Core Processor"), not the family code platform.processor() gives
-            out = subprocess.run(["powershell", "-NoProfile", "-Command", "(Get-CimInstance Win32_Processor).Name"],
-                                 capture_output=True, text=True, timeout=15).stdout.strip()
-            if out:
-                return out.splitlines()[0].strip()
-        except Exception:
-            pass
+        def ask():
+            try:  # the marketing name ("AMD Ryzen 7 7700 8-Core Processor"), not the family code platform.processor() gives
+                out = subprocess.run(["powershell", "-NoProfile", "-Command", "(Get-CimInstance Win32_Processor).Name"],
+                                     capture_output=True, text=True, timeout=15).stdout.strip()
+                return out.splitlines()[0].strip() if out else None
+            except Exception:
+                return None
+        name = cache.get("cpu_name", ask, ttl_s=30 * 86400)           # PowerShell takes 1 to 2 s to start: ask once a month, not every launch
+        if name:
+            return name
     return platform.processor() or platform.machine() or "unknown CPU"
 
 
 def detect_hardware():
     gpus = []
-    if shutil.which("nvidia-smi"):
+    smi = shutil.which("nvidia-smi")
+    if smi:
+        def ask():
+            try:
+                out = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
+                                     capture_output=True, text=True, timeout=15).stdout
+                return out if parse_nvidia_smi(out) else None
+            except Exception:
+                return None
         try:
-            out = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
-                                 capture_output=True, text=True, timeout=15).stdout
+            stamp = f"{smi}:{os.path.getmtime(smi):.0f}"            # a driver update changes nvidia-smi, which refreshes the cache
+        except OSError:
+            stamp = smi
+        out = cache.get("nvidia_smi", ask, ttl_s=3 * 86400, stamp=stamp)
+        if out:
             gpus = parse_nvidia_smi(out)
-        except Exception:
-            pass
     return Profile(sys.platform, _cpu_name(), os.cpu_count() or 1, _ram_bytes(), _DEFAULT_RAM_BW, gpus)
 
 

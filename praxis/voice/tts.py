@@ -29,10 +29,15 @@ def speakable(text):
     return t
 
 
-def split_sentences(text, min_len=24, max_len=220):
+def split_sentences(text, min_len=24, max_len=220, first_max=70):
     """Sentences for pipelined synthesis: the first is spoken while the rest are still being made. Tiny pieces are merged so
     the voice does not sound clipped; a very long sentence is cut at a comma."""
     parts = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text.strip()) if s.strip()]
+    if parts and len(parts[0]) > first_max:                  # the first chunk decides when speech STARTS: break a long opening at a comma
+        m = re.search(r"[,;:]\s", parts[0][25:])
+        if m and 25 + m.end() < len(parts[0]) - 12:
+            cut = 25 + m.end()
+            parts[0:1] = [parts[0][:cut].strip(), parts[0][cut:].strip()]
     out = []
     for s in parts:
         while len(s) > max_len:
@@ -50,6 +55,9 @@ def split_sentences(text, min_len=24, max_len=220):
 
 class Voice:
     name = "none"
+
+    def warm(self):
+        pass
 
     def synth(self, text):                 # -> (pcm16 bytes, sample rate)
         raise NotImplementedError
@@ -96,6 +104,10 @@ class PiperVoice(Voice):
                 return r.readframes(r.getnframes()), r.getframerate()
         finally:
             os.unlink(buf.name)
+
+
+    def warm(self):
+        self.synth("Ready.")                                  # loads the model and runs it once: the first real sentence is then quick
 
 
 class OsVoice(Voice):

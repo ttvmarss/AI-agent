@@ -596,9 +596,21 @@ class Reactor(unittest.TestCase):
 
     def test_calm_states_run_at_a_lower_frame_rate_than_working(self):
         c = self.make()
-        c.set_state("idle", 0, "READY", ""); calm = c.timer.interval()
-        c.set_state("working", 0, "RUNNING", ""); busy = c.timer.interval()
+        c.set_state("idle", 0, "READY", ""); calm = c._base_ms
+        c.set_state("working", 0, "RUNNING", ""); busy = c._base_ms
         self.assertGreater(calm, busy)
+
+    def test_a_window_nobody_is_looking_at_runs_slower_and_a_minimised_one_barely_runs(self):
+        c = self.make(); c.timer.stop(); c.set_state("working", 0, "RUNNING", "")
+        w = mock.Mock(); w.isMinimized.return_value = False; w.isActiveWindow.return_value = True
+        with mock.patch.object(c, "window", return_value=w), mock.patch.object(c, "isVisible", return_value=True):
+            self.assertEqual(c._pace(), 33)                      # focused: full rate
+            w.isActiveWindow.return_value = False
+            self.assertEqual(c._pace(), 66)                      # behind another window: half rate
+            w.isMinimized.return_value = True
+            self.assertEqual(c._pace(), 500)                     # minimised: barely alive
+            t0 = c.reactor.t; c._last -= 0.5; c._tick()
+            self.assertEqual(c.reactor.t, t0)                    # and it does no animation work at all
 
     def test_a_bug_while_painting_cannot_leave_a_painter_open_and_crash_the_app(self):
         c = self.make(n=10)

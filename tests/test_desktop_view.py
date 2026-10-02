@@ -1,6 +1,6 @@
-import json, unittest
+import json, types, unittest
 from praxis.events import EventLog
-from praxis.desktop.view import build_view, summarize
+from praxis.desktop.view import ViewFolder, build_view, summarize
 from praxis.desktop.telemetry import parse_cpu_stat, parse_nvidia_usage, cpu_percent
 from praxis.executive import Executive
 from praxis.router import Router, ScriptedProvider
@@ -109,8 +109,6 @@ class Telemetry(unittest.TestCase):
         self.assertEqual(g[0]["temp"], 61); self.assertEqual(parse_nvidia_usage(""), [])
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class ActiveProvider(unittest.TestCase):
@@ -147,3 +145,80 @@ class ActiveProvider(unittest.TestCase):
         log = EventLog(); i = log.append("g", "router", "model.try", {"provider": "groq/x", "role": "planner"})
         text, level = summarize(log.get(i))
         self.assertIn("groq/x", text); self.assertEqual(level, "info")
+
+
+class IncrementalFold(unittest.TestCase):
+    """The window polls ten times a second, so a poll must cost what is NEW, not what is old (6,000 events took 60 ms per poll)."""
+
+    @staticmethod
+    def ev(i, goal, type_, payload=None):
+        return types.SimpleNamespace(id=i, goal_id=goal, type=type_, payload=payload or {}, actor="x", ts=0.0)
+
+    def stream(self, r, n_goals=3, steps=4):
+        out, i = [], 0
+        for g in range(n_goals):
+            gid = f"g{g}"
+            seq = [("goal.intent", {"text": f"goal {g}"}), ("plan.accepted", {"plan": {"steps": [{"id": f"s{k}", "tool": "fs.write", "args": {"path": f"f{k}"}} for k in range(steps)]}}),
+                   ("checkpoint", {"id": "cp"})]
+            for k in range(steps):
+                seq += [("model.try", {"provider": "claude"}), ("model.call", {"provider": "claude", "cost_usd": 0.01}), ("step.intent", {"step": f"s{k}"}),
+                        ("guard.decision", {"step": f"s{k}", "verdict": r.choice(["ALLOW", "ESCALATE", "DENY"]), "class": 2}),
+                        ("guard.authorization", {"step": f"s{k}", "verdict": r.choice(["ALLOW", "DENY"])}), ("tool.result", {"step": f"s{k}", "ok": r.random() < .8}),
+                        ("verify.result", {"step": f"s{k}", "claim": "c", "passed": r.random() < .7})]
+            if r.random() < .5:
+                seq.append(("rollback", {}))
+            seq.append(("goal.report", {"status": r.choice(["VERIFIED", "FAILED", "UNVERIFIED"]), "reason": "r"}))
+            for t, p in seq:
+                i += 1; out.append(self.ev(i, gid, t, p))
+        return out
+
+    def test_feeding_in_any_chunks_gives_the_same_view_as_folding_everything_at_once(self):
+        import random
+        for seed in range(60):
+            r = random.Random(seed)
+            events = self.stream(r)
+            whole = build_view(events)
+            f = ViewFolder(); k = 0
+            while k < len(events):
+                n = r.choice([1, 1, 2, 5, 17]); f.feed(events[k:k + n]); k += n
+            self.assertEqual(f.view(), whole, seed)
+            for cut in (3, 9, 30, len(events) - 2):                                  # and at every moment in between
+                self.assertEqual(ViewFolder().feed(events[:cut]).view(), build_view(events[:cut]), (seed, cut))
+
+    def test_a_waiting_adjustment_does_not_leak_into_the_running_fold(self):
+        f = ViewFolder()
+        f.feed([self.ev(1, "g", "goal.intent", {"text": "x"}), self.ev(2, "g", "plan.accepted", {"plan": {"steps": [{"id": "s", "tool": "shell.run", "args": {"cmd": "x"}}]}}),
+                self.ev(3, "g", "checkpoint", {"id": "c"}), self.ev(4, "g", "guard.decision", {"step": "s", "verdict": "ESCALATE", "class": 4})])
+        self.assertEqual(f.view().status, "WAITING FOR YOU")
+        f.feed([self.ev(5, "g", "guard.authorization", {"step": "s", "verdict": "ALLOW"})])
+        self.assertEqual(f.view().status, "RUNNING")
+
+    def test_events_of_other_goals_and_before_any_goal_are_ignored(self):
+        f = ViewFolder().feed([self.ev(1, "old", "model.call", {"cost_usd": 5}), self.ev(2, "g", "goal.intent", {"text": "a"}), self.ev(3, "other", "goal.report", {"status": "FAILED"})])
+        v = f.view(); self.assertEqual((v.goal_id, v.status, v.cost), ("g", "PLANNING", 0.0))
+
+    def test_a_poll_costs_what_is_new_not_what_is_old_and_never_double_counts(self):
+        import tempfile, os, time as _t
+        from praxis.desktop.controller import Controller
+        from tests.test_desktop_controller import mk, GOOD, wait
+        c, ws, st = mk([GOOD])
+        log = EventLog(c.db_path)
+        log.append("big", "user", "goal.intent", {"text": "long"})
+        for i in range(3000):
+            log.append("big", "router", "model.try", {"provider": "claude"}); log.append("big", "router", "model.call", {"provider": "claude", "cost_usd": 0.001})
+        first = c.poll()                                                               # the first poll folds the log once (and sees every event as new)
+        self.assertAlmostEqual(first.view.cost, 3.0, places=6)                         # ...without counting any of them twice
+        c._last_id = c._folder_last - 400                                              # the read cursor is rewound (mark_read does this): old events come round again
+        again = c.poll()
+        self.assertAlmostEqual(again.view.cost, 3.0, places=6)                         # ...and are not counted a second time
+        t0 = _t.perf_counter()
+        for _ in range(30): u = c.poll()
+        per = (_t.perf_counter() - t0) / 30 * 1000
+        self.assertLess(per, 8.0, f"{per:.1f} ms per poll on a 6000-event goal")
+        self.assertAlmostEqual(u.view.cost, 3.0, places=6)
+        log.append("big", "router", "model.call", {"provider": "claude", "cost_usd": 1.0})
+        self.assertAlmostEqual(c.poll().view.cost, 4.0, places=6); self.assertAlmostEqual(c.poll().view.cost, 4.0, places=6)     # counted once
+
+
+if __name__ == "__main__":
+    unittest.main()

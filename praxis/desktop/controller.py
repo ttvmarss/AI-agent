@@ -16,6 +16,7 @@ from ..events import EventLog
 from ..executive import Cancelled, Executive
 from ..memory import Memory
 from .settings import Settings
+from .view import ViewFolder
 from .view import build_view, explain
 
 
@@ -71,6 +72,7 @@ class Controller:
         self._approvals = {}
         self._tl = threading.local()
         self._last_id = 0
+        self._folder, self._folder_last = None, 0     # the incremental fold of the current goal's events (see ViewFolder)
         self._on_executive_built = None  # test hook
         self.refusal = ""
         self._baseline = None
@@ -134,6 +136,7 @@ class Controller:
             self.workspace = os.path.realpath(path)
             self._tl = threading.local()
             self._last_id = 0
+            self._folder = None
             self._baseline = None
         self.start()
         return True
@@ -277,8 +280,16 @@ class Controller:
         new = r.since(self._last_id)
         if new:
             self._last_id = new[-1].id
-        g = r.last_goal_id()
-        view = build_view(r.all(goal_id=g) if g else [])
+        if self._folder is None:                              # first poll (or a new workspace): fold the last goal once, from the log
+            g = r.last_goal_id()
+            evs = r.all(goal_id=g) if g else []
+            self._folder = ViewFolder().feed(evs)
+            self._folder_last = max((e.id for e in evs), default=0)
+        fresh = [e for e in new if e.id > self._folder_last]   # only what the fold has not seen: a poll costs what is NEW, not what is OLD
+        if fresh:
+            self._folder.feed(fresh)
+            self._folder_last = fresh[-1].id
+        view = self._folder.view()
         with self._lock:
             approvals = [x[0] for x in self._approvals.values()]
         return Update(new, view, approvals, self.state, self.error)

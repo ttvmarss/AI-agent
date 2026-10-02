@@ -10,7 +10,7 @@ from .hardware import detect_hardware, profile_from_config
 from .openai_compat import OpenAICompatProvider
 from .paths import home
 from .usage import UsageTracker
-from . import discover
+from . import discover, ollama_boot
 from .providers import ClaudeCLI, CodexCLI, DevinCLI, DevinProvider, DroidCLI, OllamaProvider
 from .registry import Registry
 from .router import ProviderError, Router
@@ -23,7 +23,8 @@ DEFAULTS = {
         "droid": {"enabled": True, "model": ""},      # Factory; needs FACTORY_API_KEY
         "ollama": {"enabled": True, "host": "http://127.0.0.1:11434", "model": "auto",
                    "num_ctx": 0,            # 0 = auto: 8192 on <=8GB VRAM (KV cache would crowd out weights), else 16384
-                   "memory_gb": 0, "prefer": [], "min_tokens_per_s": 6.0},
+                   "memory_gb": 0, "prefer": [], "min_tokens_per_s": 6.0,
+                   "autostart": True},      # start `ollama serve` (with the small-VRAM tuning) when it is installed but not running
         # Devin: "auto" uses the `devin` command-line agent (from Devin Desktop, signed in with `devin auth login`) if it is found,
         # else the cloud API (DEVIN_API_KEY + DEVIN_ORG_ID, spends ACUs); "cli" / "api" force one of them.
         "devin": {"enabled": True, "mode": "auto", "model": ""},
@@ -65,7 +66,7 @@ DEFAULTS = {
     "privacy": {"data_class": "project"},
     "sandbox": {"backend": "auto"},   # auto | bwrap | unshare | docker | none
     # Hands-free voice (pip install faster-whisper piper-tts sounddevice). User config only: a project folder cannot touch it.
-    "voice": {"enabled": True, "wake_word": "praxis", "stt_model": "base.en", "voice": "jarvis-high", "speak": True,
+    "voice": {"enabled": True, "wake_word": "praxis", "stt_model": "auto", "stt_device": "auto", "voice": "jarvis-high", "speak": True,
               "attentive_s": 15.0, "approval_s": 60.0, "input_device": "", "chat": True,
               "wake_required": False},        # False: just talk; True: it acts only on sentences that start with its name
 
@@ -140,15 +141,22 @@ class Stack:
         if not o.get("enabled"):
             self.skipped["ollama"] = "disabled in config"
         else:
+            self.ollama_note = ""
+            if o.get("autostart", True):
+                _, self.ollama_note = ollama_boot.ensure(o.get("host") or "http://127.0.0.1:11434", self.profile.vram_total)
             op = OllamaProvider(o.get("host"), o.get("model", "auto"), self.ollama_num_ctx,
                                 memory_bytes=int(o["memory_gb"] * 2**30) if o.get("memory_gb") else None,
                                 registry=registry, prefer=o.get("prefer", []), profile=self.profile,
                                 min_tps=o.get("min_tokens_per_s", 6.0))
             try:
                 op.version()
-                self.providers.append(op)
+                if not op.models():
+                    self.skipped["ollama"] = ("running, but no model is installed: `py -3 -m praxis models --recommend` shows what fits your PC, "
+                                              "then `py -3 -m praxis pull <tag>` (a 3B model answers chat in about a second)")
+                else:
+                    self.providers.append(op)
             except ProviderError as e:
-                self.skipped["ollama"] = str(e)[:120]
+                self.skipped["ollama"] = (str(e)[:120] + (f"  [{self.ollama_note}]" if self.ollama_note else ""))
         for pr in PRESETS:  # free cloud tiers: one provider per model, only if you gave a key
             c = pc.get(pr.id, {})
             if not c.get("enabled", True):

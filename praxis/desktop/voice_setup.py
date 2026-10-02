@@ -48,6 +48,23 @@ def choose_voice(name, progress=lambda text, frac=None: None):
     return v, "; ".join(notes) + " - using the system voice"
 
 
+def _warm_up(recognizer, voice):
+    """Both engines warm up at the same time (each spends its time in native code, so they genuinely overlap)."""
+    import threading
+
+    def go(obj):
+        try:
+            if obj is not None and hasattr(obj, "warm"):
+                obj.warm()
+        except Exception as e:
+            log_line(f"warm-up failed: {type(e).__name__}: {e}")
+    ts = [threading.Thread(target=go, args=(o,), daemon=True) for o in (recognizer, voice)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join(60)
+
+
 def build_voice(controller, vcfg, progress=lambda text, frac=None: None, on_mute=None, mic=None, speaker=None, recognizer=None,
                 voice=None):
     """Any of mic / speaker / recognizer / voice can be injected (tests do); otherwise the real engines are used."""
@@ -68,7 +85,7 @@ def build_voice(controller, vcfg, progress=lambda text, frac=None: None, on_mute
         except Exception as e:
             raise VoiceUnavailable("the speech recogniser is missing: pip install faster-whisper") from e
         progress("Loading the speech recogniser (the first run downloads about 150 MB)...", None)
-        recognizer = WhisperRecognizer(vcfg.get("stt_model", "base.en"), root=os.path.join(tts.voice_dir(), "whisper"))
+        recognizer = WhisperRecognizer(vcfg.get("stt_model", "auto"), root=os.path.join(tts.voice_dir(), "whisper"), device=vcfg.get("stt_device", "auto"))
         try:
             recognizer.load()
         except Exception as e:
@@ -76,6 +93,14 @@ def build_voice(controller, vcfg, progress=lambda text, frac=None: None, on_mute
     note = ""
     if voice is None and vcfg.get("speak", True):
         voice, note = choose_voice(vcfg.get("voice", "jarvis-high"), progress)
+    progress("Warming up the voice and the ears...", None)
+    _warm_up(recognizer, voice)                       # the first utterance and the first sentence must not pay for lazy initialisation
+    dev = getattr(recognizer, "device_used", "")
+    if dev:
+        stt_note = f"ears: {getattr(recognizer, 'model_used', '')} on {dev.upper()}" + (f" ({recognizer.fallback_reason})" if getattr(recognizer, "fallback_reason", "") else "")
+        log_line(stt_note)
+        if getattr(recognizer, "fallback_reason", ""):
+            note = (note + "; " if note else "") + recognizer.fallback_reason
     try:
         loop = VoiceLoop(ControllerActions(controller, on_mute), recognizer, mic, speaker, voice,
                          wake_word=vcfg.get("wake_word", "praxis"), speak=bool(voice) and vcfg.get("speak", True),
