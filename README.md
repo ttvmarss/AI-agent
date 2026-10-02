@@ -42,7 +42,7 @@ goal -> recall (memory) -> plan (model A) -> observe files (labeled UNTRUSTED) -
   pipeline: **PLAN** (outer), **ACT** (one arc per real step, coloured by its state) and **VERIFY** (one arc per real check; it
   seals into a closed green ring when the goal verifies). A radial equaliser around the housing is your voice, and its own; sparks
   rise from the housing; every real event flares the core and sends a ring outward; a stream runs to the provider being called
-  right now; the latest event is typed out in a caption; your AIs sit at the sides as hexagonal systems with budget arcs, rest
+  right now; your AIs sit at the sides as hexagonal systems with budget arcs, rest
   clocks and data-class blocks; the live routing and data settings are in the footer. **Esc** stops (kills in-flight calls, restores
   the workspace), **F2** cycles the data class, **F3** the frugality, **F4** mutes, **Ctrl+O** opens a folder, **Ctrl+R** resumes.
   Approval dialogs show the exact action and default to Deny. It lowers

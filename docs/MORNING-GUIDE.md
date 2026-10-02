@@ -103,7 +103,7 @@ Double-click the **PRAXIS** shortcut. The first thing you see is PRAXIS itself, 
 
 * **The three rings are the kernel's real pipeline.** **PLAN** (outer): a comet circles it while PRAXIS plans, then it lights up. **ACT** (middle): one arc per real step of the plan, coloured by that step's state (grey = waiting its turn, blue with a comet = running, orange = needs you, green = verified, red = failed). **VERIFY** (inner): one arc per real check, green or red; when the goal verifies it seals into one closed green ring.
 * **The coils are how hard it works**: they spin up and chase light round while PRAXIS works, hold still when it needs you, spin down fast when you stop it. **The core colour is the state**: reactor blue idle and working, orange needs you, gold-white with a gold shockwave when verified, red failed.
-* **Every real event flares the core and sends a ring outward**, and the latest one is typed out in the caption plate under it.
+* **Every real event flares the core and sends a ring outward**, and it is written to the event log (bottom-left on wide windows). There is no caption box on the dial.
 * **The radial equaliser around the housing is the real audio**: yours while it listens, its own while it speaks. The targeting brackets close in while it hears you.
 * **A stream of sparks flows to the AI being called right now**, and that AI glows.
 * **Your AIs sit at the sides** as hexagons: free and local on the left, subscriptions on the right. The arc on each is how much of its allowance is spent, a clock hand means it is resting after a limit, dashed means this goal's DATA setting forbids it. Hover one for its name and details.

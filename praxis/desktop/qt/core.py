@@ -153,8 +153,12 @@ class CoreView(QWidget):
         self.active = name
 
     def set_caption(self, text, level="info"):
+        """The latest message. It is no longer drawn as a box on the dial (removed on request); warnings and errors are written to the
+        event feed instead, so a setup problem is never invisible."""
         if text != self.caption:
             self.caption, self.cap_level, self.cap_t = text, level, 0.0
+            if level in ("warn", "bad") and text:
+                self.add_log(text, level)
 
     @property
     def caption_shown(self):
@@ -952,22 +956,6 @@ class CoreView(QWidget):
             p.setPen(Qt.NoPen); p.setBrush(QColor(tc.red(), tc.green(), tc.blue(), int(255 * pulse))); p.drawEllipse(QPointF(w - tw - 6, 22), 3.2, 3.2)
             p.setPen(QColor(tc.red(), tc.green(), tc.blue(), 235))
             p.drawText(QRectF(w - tw + 4, 12, tw - 8, 20), Qt.AlignVCenter | Qt.AlignLeft, tag)
-        if self.caption:                                                     # caption: typed out in a dark plate with a gold edge
-            f3 = self._font(self.mono, 10)
-            p.setFont(f3)
-            fm3 = QFontMetricsF(f3)
-            shown = self.caption_shown
-            full_w = min(w * 0.78, fm3.horizontalAdvance(self.caption) + 34)
-            text = fm3.elidedText(shown, Qt.ElideRight, full_w - 34)
-            cur = "▌" if (self.cap_t < len(self.caption) / 70.0 or int(self.t * 2) % 2 == 0) else " "
-            box = QRectF(cx - full_w / 2, h - 52, full_w, 28)
-            p.setPen(QPen(qc(LEVEL_COLOR.get(self.cap_level, "accent"), 110), 1)); p.setBrush(QColor(4, 6, 9, 225))
-            p.drawPolygon(QPolygonF([QPointF(box.left() + 8, box.top()), QPointF(box.right() - 8, box.top()), QPointF(box.right(), box.top() + 8),
-                                     QPointF(box.right(), box.bottom()), QPointF(box.left() + 8, box.bottom()), QPointF(box.left(), box.bottom() - 8),
-                                     QPointF(box.left(), box.top() + 8)]))
-            p.setPen(QPen(rgb(GOLD, 220), 2.0)); p.drawLine(QPointF(box.left() + 1, box.top() + 9), QPointF(box.left() + 1, box.bottom() - 9))
-            p.setPen(qc("text" if self.cap_level == "info" else LEVEL_COLOR.get(self.cap_level, "text")))
-            p.drawText(box.adjusted(18, 0, -10, 0), Qt.AlignVCenter | Qt.AlignLeft, text + cur)
         if self.footer:
             p.setFont(self._font(self.mono, 8, None, 2)); p.setPen(qc("dim"))
             p.drawText(QRectF(0, h - 20, w, 14), Qt.AlignCenter, self.footer)

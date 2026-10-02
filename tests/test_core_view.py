@@ -373,6 +373,18 @@ class Reactor(unittest.TestCase):
             c.set_voice("hearing", lvl, lvl, True); step(c, 0.1); render(c)
         self.assertTrue(0.0 <= c.voice["level"] <= 10.0)
 
+    def test_there_is_no_caption_box_on_the_dial_but_warnings_still_reach_the_event_feed(self):
+        c = self.make(1280, 760, n=10)
+        box = (1280 / 2 - 260, 760 - 56, 1280 / 2 + 260, 760 - 22)               # where the plate used to be
+        before = render(c)
+        c.set_caption("How can I make you on a MCU Tony Stark level?", "info"); step(c, 2.0)
+        after = render(c)
+        diff = sum(abs(before.pixelColor(x, y).red() - after.pixelColor(x, y).red()) for x, y, *_ in pixels(before, *box, stride=2))
+        self.assertLess(diff, 4000)                                               # nothing is drawn there any more (only the scene's own motion)
+        self.assertEqual(len(c.log), 0)                                           # an ordinary message does not go to the feed...
+        c.set_caption("No AI models yet: add a free key", "warn"); c.set_caption("Voice is unavailable: no microphone", "bad")
+        self.assertEqual([l[1] for l in c.log], ["No AI models yet: add a free key", "Voice is unavailable: no microphone"])    # ...a problem does
+
     # ---- the typed caption -----------------------------------------------------------------------------------------------
     def test_the_caption_types_out_and_does_not_restart_when_set_to_the_same_text(self):
         c = self.make()
