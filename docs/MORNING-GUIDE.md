@@ -97,17 +97,15 @@ When a provider says "limit reached", it rests until the time the provider state
 
 ## 5. First launch
 
-![The Reactor in six states](media/core-states.jpg)
+![Twin Core in four states](media/hud-states.jpg)
 
-Double-click the **PRAXIS** shortcut. The first thing you see is PRAXIS itself, **The Reactor**: an arc reactor in a gold and gunmetal housing that powers up coil by coil as the app boots, ringed by flat HUD gauges. It is decoration that carries real information: nothing on it is invented.
+Open PRAXIS (the **PRAXIS** shortcut, or type `praxis` in a terminal). The screen is **Twin Core**: a wireframe holo-globe, a bright core and three tilted gyro rings, with panels for the mission, your AIs, the event log and the numbers. Nothing on it is invented.
 
-* **The three rings are the kernel's real pipeline.** **PLAN** (outer): a comet circles it while PRAXIS plans, then it lights up. **ACT** (middle): one arc per real step of the plan, coloured by that step's state (grey = waiting its turn, blue with a comet = running, orange = needs you, green = verified, red = failed). **VERIFY** (inner): one arc per real check, green or red; when the goal verifies it seals into one closed green ring.
-* **The coils are how hard it works**: they spin up and chase light round while PRAXIS works, hold still when it needs you, spin down fast when you stop it. **The core colour is the state**: reactor blue idle and working, orange needs you, gold-white with a gold shockwave when verified, red failed.
-* **Every real event flares the core and sends a ring outward**, and it is written to the event log (bottom-left on wide windows). There is no caption box on the dial.
-* **The radial equaliser around the housing is the real audio**: yours while it listens, its own while it speaks. The targeting brackets close in while it hears you.
-* **A stream of sparks flows to the AI being called right now**, and that AI glows.
-* **Your AIs sit at the sides** as hexagons: free and local on the left, subscriptions on the right. The arc on each is how much of its allowance is spent, a clock hand means it is resting after a limit, dashed means this goal's DATA setting forbids it. Hover one for its name and details.
-* Click the reactor and it answers. On a slow machine it quietly drops to fewer sparks and no bloom (never back up, so it cannot flicker); set `PRAXIS_REDUCE_MOTION=1` for a calmer, lower-power version.
+* **Two minds, one core.** **JARVIS** (cool ice-blue) is in charge while PRAXIS idles, listens and talks; **FRIDAY** (amber) takes over while a goal runs. The two names top-left show which is lit.
+* **The three rings are the kernel's real pipeline.** **PLAN**: a comet circles it while PRAXIS plans. **ACT**: one arc per real step, coloured by its state (grey = waiting its turn, bright = running, amber = needs you, green = verified, red = failed). **VERIFY**: one arc per real check; when the goal verifies it seals shut.
+* **MISSION (left)** is the goal and its real steps and checks. **MINDS (right)** is your AIs: free and local ones are green, subscriptions violet; the meter is how much of the allowance is spent, a ring means it is resting after a limit, and a stream of sparks runs to the one being called right now. Hover one for details. **EVENT LOG** and **TELEMETRY** (elapsed, steps, checks, brain, cost) are along the bottom. On a narrow window the panels fold away and only the dial remains.
+* **The ring of bars around the globe is the real audio**: yours while it listens, its own while it speaks. Every real event flares the core and sends a ripple. Click the core and it answers.
+* **You can redesign it.** The whole look is one JSON file: run `python -m praxis hud export`, edit `~/.praxis/hud.json` while PRAXIS is open and watch it change within a second. `python -m praxis hud validate` checks it; `docs/HUD-DESIGN.md` is the reference. On a slow machine it quietly drops detail; `PRAXIS_REDUCE_MOTION=1` gives a calmer, lower-power version.
 
 1. Add a free key or two (Groq and Cerebras are trusted tiers): `python -m praxis keys set groq`. Download the recommended local models: `python -m praxis hardware`, then `python -m praxis pull <tag>`.
 2. Run **`python -m praxis bench --max-cost 3`**. This sends test tasks to every available model and writes measured quality, speed and cost to the registry. After that the router picks **the cheapest model that is as good as the best**. Heads-up: this uses real subscription usage; the `--max-cost` cap stops new providers once the estimate passes it.

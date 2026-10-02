@@ -196,6 +196,13 @@ def cmd_free(a, ws):
 def main(argv=None):
     _safe_streams()
     raw = list(sys.argv[1:] if argv is None else argv)
+    if raw and raw[0] == "hud":                              # the design file tools need no workspace, models or Qt
+        hp = argparse.ArgumentParser(prog="praxis hud")
+        hp.add_argument("action", choices=["validate", "export", "path", "docs"])
+        hp.add_argument("target", nargs="?")
+        ha = hp.parse_args(raw[1:])
+        from . import hudcli
+        return hudcli.run(ha.action, ha.target)
     if launch.is_launch_request(raw):                       # `praxis` / `praxis app [folder]`: open the window and hand the terminal back
         return 0 if launch.start(raw[1:]) is not None else 1
     ap = argparse.ArgumentParser(prog="praxis")

@@ -1746,4 +1746,34 @@ this checkout and returns the prompt at once, so the terminal is free and closin
 word (`praxis run ...`, `praxis doctor`, `praxis undo`) is the normal command line. **Not verified here:** the Windows PATH step and the
 detached start on a real Windows desktop (only the argument handling and the detached-start call are tested, with a fake process).
 
-*End of Revision Zero (with addenda 38 to 49). Failures get logged, not hidden.*
+## 50. Status addendum — the screen is a JSON design, and it is Twin Core (2026-10-02)
+
+**The look moved out of Python.** The old Python-drawn reactor (`qt/core.py`, `qt/reactor.py`, ~1,500 lines of hand-placed painting) is gone. In its place:
+`praxis/desktop/qt/hud/` is a small engine that *interprets* `default.hud.json` (or `~/.praxis/hud.json`). The file holds the palette, the table of how
+each state moves the machine, named layout `vars`, and the layers: 27 element types (shapes, arcs, tilted ellipses, tick scales, a wireframe sphere, bars,
+text, panels, gradients, hex and dot grids, a core glow, effects driven by real events) plus `group` and `repeat` (draw a child once per *real* data row:
+steps, checks, brains, log lines, readout, ring segments, or N times). Values are small expressions (`"R * 1.4 + sin(t*2) * 6"`, `"item.pressure > 0.9"`)
+over real state; the expression language is parsed with `ast`, whitelisted node by node and compiled to closures, so a design can compute and animate but
+cannot import, open a file or call a method (`tests/test_hud.py`: 15 hostile forms refused; evaluation never raises and never returns NaN). A spec is
+validated with the exact JSON path of every mistake (`layers[3].opacity: syntax error`); a bad edit is reported once in the event feed and the **last good
+design stays on screen**; saving a good one is picked up within a second without restarting. `praxis hud validate | export | path | docs`; the reference
+`docs/HUD-DESIGN.md` is generated from the same schema the validator uses and a test fails if it is stale.
+
+**The design: Twin Core.** A wireframe holo-globe, a hot core, a ring of real audio bars, and three tilted gyro rings that are the real PLAN / ACT /
+VERIFY pipeline; panels for MISSION, MINDS, EVENT LOG and TELEMETRY. JARVIS (ice-blue, dot grid) and FRIDAY (amber, hexagon grid) are the `persona`
+number in each state's row, eased, driving the palette (`accent` is a persona blend) and the grids' crossfade. At the old reactor's expense the HUD now
+shows more real information (the plan's steps and checks by name, a budget meter per brain); it still shows nothing that is not measured.
+
+**Speed.** Static layers (backdrop with scanlines, the dot and hex grids, the halo, the flat rings, the panel frames) are painted once into pixmaps and
+reused until the window resizes or the active mind changes; the radar wedge is a cached pixmap that is only rotated; courier sparks and the voice bars
+are batched; every glowing layer in one run shares a single bloom pass; sphere detail follows the quality level. In this container's software renderer
+a frame is about 25 ms idle and 36 ms working (the old reactor was about 27 ms working with far less on screen); a real GPU-backed Windows window should do better.
+
+**Defects the new tests found while building it:** a NaN time step passed the motion clamp and crashed the simulation; an element whose boot index
+was past the end of the start-up sequence never appeared; a design without a background layer showed a white widget; a bad user design at
+start-up was dropped without a word; constant colour mixes were recomputed every frame. Mutation checks (9 deliberate breakages: persona easing, visibility, boot
+reveal, spec fallback, the colour of brains and steps, the expression whitelist, the background fill, the boot-index clamp) are all caught; two
+of them first slipped through, which is why `visible`/`opacity`/`boot` and the row colours now have their own rendered tests.
+**Not verified here:** how it looks and runs on your Windows screen, and `praxis hud` hot-reload on Windows file timestamps (tested with a fake mtime bump).
+
+*End of Revision Zero (with addenda 38 to 50). Failures get logged, not hidden.*

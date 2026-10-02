@@ -12,7 +12,7 @@ try:
     from praxis.desktop.qt import theme
     from tests.qtutil import dispose
     from praxis.desktop.qt.app import MainWindow, STRATEGY, apply_view
-    from praxis.desktop.qt.core import CoreView
+    from praxis.desktop.qt.hud.view import HudView as CoreView
     from praxis.desktop.qt.dialogs import ApprovalDialog
     from praxis.desktop.voice_actions import ControllerActions
     from praxis.desktop.voice_setup import VoiceUnavailable

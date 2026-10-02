@@ -17,7 +17,7 @@ try:
     from tests.qtutil import dispose
     from praxis.desktop.qt import reactor as RXE
     from praxis.desktop.qt.app import MainWindow, apply_view
-    from praxis.desktop.qt.core import CoreView
+    from praxis.desktop.qt.hud.view import HudView as CoreView
     from praxis.desktop.view import StepView, View
     from tests.test_desktop_qt import (FakeMic, FakeRecognizer, FakeSpeaker, FakeVoice, VoiceLoop, ControllerActions, VoiceUnavailable,
                                        fake_voice, no_voice, pump, qapp, prov, multi_stack, utterance)

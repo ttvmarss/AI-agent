@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (QApplication, QFileDialog, QLineEdit, QMainWindow
 from ... import build
 from ..view import View, summarize
 from . import theme
-from .core import CoreView
+from .hud.view import HudView
 from ..voice_setup import VoiceUnavailable, build_voice
 from .dialogs import ApprovalDialog
 from .theme import C
@@ -62,7 +62,9 @@ def apply_view(core, v, state, waiting, hint="", error=""):
     checks = [bool(e["passed"]) for e in v.evidence]
     plan = ("planning" if v.status == "PLANNING" else "ready" if v.steps
             else "failed" if v.status == "FAILED" and v.reason.startswith("planning failed") else "none")
-    core.set_pipeline(plan, [s.state for s in v.steps], checks, sealed=v.status == "VERIFIED" and bool(checks))
+    core.set_pipeline(plan, [s.state for s in v.steps], checks, sealed=v.status == "VERIFIED" and bool(checks),
+                      labels=[(s.summary or s.tool) for s in v.steps])
+    core.set_goal(v.goal_text)
     core.set_active(v.active_provider)
     if state == "starting":
         core.set_caption("Booting: detecting hardware, tools and sandbox")
@@ -88,7 +90,7 @@ class MainWindow(QMainWindow):
         root = Backdrop()
         self.setCentralWidget(root)
         lay = QVBoxLayout(root); lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(0)
-        self.core = CoreView(); self.core.setMinimumSize(560, 300)
+        self.core = HudView()
         lay.addWidget(self.core, 1)
         bar = QWidget(); bar.setStyleSheet("background: #04070d;")
         bl = QVBoxLayout(bar); bl.setContentsMargins(max(24, 0), 6, 24, 16)

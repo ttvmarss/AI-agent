@@ -10,7 +10,7 @@ def dispose(w):
     try:
         from PySide6.QtCore import QEvent
         from PySide6.QtWidgets import QApplication
-        from praxis.desktop.qt.core import CoreView
+        from praxis.desktop.qt.hud.view import HudView as CoreView
         cores = ([w] if isinstance(w, CoreView) else []) + w.findChildren(CoreView)
         for c in cores:
             c.timer.stop()
