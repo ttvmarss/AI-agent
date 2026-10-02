@@ -147,7 +147,7 @@ def run_task(task, provider, sandbox=None):
     ws = _setup(task)
     t0 = time.time()
     ex = Executive(ws, EventLog(), Router([provider]), critic=False, max_replans=0, sandbox=sandbox,
-                   data_class="private" if provider.card.privacy == "local" else "project")
+                   data_class={"local": "private", "cloud": "project", "open": "open"}.get(provider.card.privacy, "open"))
     try:
         rep = ex.run(task["goal"])
         status, reason = rep.status, rep.reason

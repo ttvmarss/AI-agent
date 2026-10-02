@@ -130,23 +130,26 @@ class Controller:
         self.stop()
 
     # ---- running goals -----------------------------------------------------------
-    def _make_executive(self, log, private, no_critic):
+    def _make_executive(self, log, data_class, no_critic):
         st, lim = self._stack, self._stack.cfg["limits"]
         return Executive(self.workspace, log, st.router, approver=self._approver, agents=st.agents,
                          critic=not no_critic and len(st.providers) > 1,
                          max_steps=lim["max_steps"], max_model_calls=lim["max_model_calls"],
                          max_cost_usd=lim["max_cost_usd"] or None, max_checkpoint_mb=lim.get("max_checkpoint_mb", 512),
-                         data_class="private" if private else st.cfg["privacy"]["data_class"], sandbox=st.sandbox)
+                         escalate=st.cfg.get("routing", {}).get("escalate", True),
+                         max_escalations=st.cfg.get("routing", {}).get("max_escalations", 2),
+                         data_class=data_class or st.cfg["privacy"]["data_class"], sandbox=st.sandbox)
 
-    def submit(self, text, private=False, no_critic=False):
-        return self._launch(lambda ex: ex.run(text), private, no_critic)
+    def submit(self, text, private=False, no_critic=False, data_class=None):
+        """data_class: 'private' (local only) | 'project' (+ trusted cloud) | 'open' (+ free tiers that may train)."""
+        return self._launch(lambda ex: ex.run(text), "private" if private else data_class, no_critic)
 
     def resume(self):
         if not self.unfinished():
             return False
-        return self._launch(lambda ex: ex.resume(), False, False)
+        return self._launch(lambda ex: ex.resume(), None, False)
 
-    def _launch(self, action, private, no_critic):
+    def _launch(self, action, data_class, no_critic):
         with self._lock:
             if self._state != "idle":
                 return False
@@ -155,14 +158,14 @@ class Controller:
             self._baseline = self._reader().db.execute("SELECT MAX(id) FROM events").fetchone()[0] or 0
         except Exception:
             self._baseline = None
-        threading.Thread(target=self._work, args=(action, private, no_critic), daemon=True, name="praxis-worker").start()
+        threading.Thread(target=self._work, args=(action, data_class, no_critic), daemon=True, name="praxis-worker").start()
         return True
 
-    def _work(self, action, private, no_critic):
+    def _work(self, action, data_class, no_critic):
         log = None
         try:
             log = EventLog(self.db_path)  # connection is created ON the worker thread
-            ex = self._make_executive(log, private, no_critic)
+            ex = self._make_executive(log, data_class, no_critic)
             with self._lock:
                 self._executive = ex
             if self._on_executive_built:

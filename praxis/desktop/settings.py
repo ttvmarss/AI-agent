@@ -3,8 +3,7 @@ import json
 import os
 
 
-def default_home():
-    return os.environ.get("PRAXIS_HOME") or os.path.join(os.path.expanduser("~"), ".praxis")
+from ..paths import home as default_home  # noqa: E402,F401  (kept importable from here for older callers)
 
 
 class Settings:

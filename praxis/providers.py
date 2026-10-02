@@ -153,21 +153,26 @@ class OllamaProvider(Provider):
     can_delegate = False
 
     def __init__(self, host="http://127.0.0.1:11434", model="auto", num_ctx=16384, timeout=900,
-                 memory_bytes=None, registry=None, prefer=(), profile=None, min_tps=6.0):
+                 memory_bytes=None, registry=None, prefer=(), profile=None, min_tps=6.0,
+                 api_key=None, label="ollama", privacy="local", tier="local"):
         self.profile, self.min_tps = profile, min_tps
-        self.tier = "local"
+        self.api_key, self.label = api_key, label
+        self.tier = tier
         self.host = host.rstrip("/")
         self.configured = model
         self.num_ctx, self.timeout = num_ctx, timeout
         self.memory_bytes = memory_bytes
         self.registry, self.prefer = registry, tuple(prefer)
         self.model = None if model in (None, "", "auto") else model
-        self.card = CapabilityCard("ollama", "local")
+        self.card = CapabilityCard(f"{label}/{self.model}" if self.model else label, privacy)
         self.last_meta = {}
 
     def _http(self, path, body=None, timeout=None):
+        headers = {"content-type": "application/json"}
+        if self.api_key:  # Ollama Cloud (direct API)
+            headers["Authorization"] = f"Bearer {self.api_key}"
         req = urllib.request.Request(self.host + path, data=None if body is None else json.dumps(body).encode(),
-                                     headers={"content-type": "application/json"})
+                                     headers=headers)
         try:
             with urllib.request.urlopen(req, timeout=timeout or self.timeout) as r:
                 return json.load(r)
@@ -193,7 +198,7 @@ class OllamaProvider(Provider):
         if not pick:
             raise ProviderError("ollama: no installed model fits this machine (run `ollama pull <model>`)")
         self.model = pick
-        self.card.name = f"ollama/{pick}"
+        self.card.name = f"{self.label}/{pick}"
         return pick
 
     def complete(self, role, messages):

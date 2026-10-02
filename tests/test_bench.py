@@ -70,3 +70,14 @@ class BenchHonesty(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BenchPrivacy(unittest.TestCase):
+    def test_open_and_cloud_providers_are_benchmarked_under_their_own_data_class(self):
+        from praxis.bench import TASKS, run_task
+        from praxis.router import ScriptedProvider
+        for privacy in ("local", "cloud", "open"):
+            p = ScriptedProvider(["x"] * 3, name=f"p-{privacy}", privacy=privacy)
+            r = run_task(TASKS[0], p)
+            self.assertNotIn("no eligible provider", r["reason"], privacy)   # it must have been *asked*, not gated out
+            self.assertEqual(len(p.calls) >= 1, True, privacy)

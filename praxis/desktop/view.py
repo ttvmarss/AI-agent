@@ -61,6 +61,11 @@ def summarize(e):
                 bits.append(f"{tps:.0f} tok/s")
             return f"{who} answered" + (f" ({', '.join(bits)})" if bits else ""), "info"
         return f"{who} failed: {str(p.get('error', ''))[:120]}", "warn"
+    if t == "model.skipped":
+        return f"Skipped {p.get('provider')}: {p.get('reason', '')}", "warn"
+    if t == "escalation":
+        return (f"Escalating (attempt {p.get('attempt')}): {p.get('from')} failed verification, trying a stronger model "
+                f"- {str(p.get('reason', ''))[:100]}"), "warn"
     if t == "plan.proposed":
         return "Model proposed a plan (raw output recorded)", "info"
     if t == "plan.accepted":

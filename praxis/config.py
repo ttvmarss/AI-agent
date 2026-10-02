@@ -4,7 +4,12 @@ import os
 import shutil
 import tomllib
 
+from . import secrets
+from .free_tiers import PRESETS
 from .hardware import detect_hardware, profile_from_config
+from .openai_compat import OpenAICompatProvider
+from .paths import home
+from .usage import UsageTracker
 from .providers import ClaudeCLI, CodexCLI, DevinProvider, DroidCLI, OllamaProvider
 from .registry import Registry
 from .router import ProviderError, Router
@@ -19,7 +24,15 @@ DEFAULTS = {
                    "num_ctx": 0,            # 0 = auto: 8192 on <=8GB VRAM (KV cache would crowd out weights), else 16384
                    "memory_gb": 0, "prefer": [], "min_tokens_per_s": 6.0},
         "devin": {"enabled": False},                  # needs DEVIN_API_KEY + DEVIN_ORG_ID; spends ACUs
+        # free cloud tiers: each needs a (free) API key: `praxis keys set <name>`; see `praxis free`
+        "groq": {"enabled": True}, "cerebras": {"enabled": True}, "ollama-cloud": {"enabled": True},
+        "gemini": {"enabled": True}, "mistral": {"enabled": True}, "nvidia": {"enabled": True},
+        "openrouter": {"enabled": True},
     },
+    # Spend limits you want PRAXIS to respect (soft: an exhausted provider goes to the back, never blocks a goal).
+    # Keys: calls_|cost_usd_|tokens_ + 5h|24h|7d. A family name ("claude") is a SHARED budget. Free tiers get theirs
+    # automatically from their documented limits. Example:  [budgets.claude]  cost_usd_5h = 8.0
+    "budgets": {},
     # One provider instance per model; the router picks by tier (unmeasured) or by measured quality-per-cost.
     # "" = the account's default model. IDs for claude were verified live; codex/droid IDs come from vendor docs
     # (2026-10-02) and are validated at runtime: a rejected ID falls back automatically (ModelUnavailable).
@@ -29,16 +42,20 @@ DEFAULTS = {
         "droid": {"best": "claude-fable-5.1", "balanced": ""},
     },
     "role_tiers": {
-        "planner": ["balanced", "best", "fast"], "replanner": ["balanced", "best", "fast"],
-        "critic": ["best", "balanced", "fast"], "delegate": ["balanced", "fast", "best"],
+        "planner": ["balanced", "best", "fast", "free", "local"], "replanner": ["balanced", "best", "fast", "free", "local"],
+        "critic": ["best", "balanced", "fast", "free", "local"], "delegate": ["balanced", "fast", "best"],
     },
     "hardware": {"vram_gb": 0, "ram_gb": 0, "gpu_name": "", "ram_bw_gbps": 0, "gpu_bw_gbps": 0},
     "roles": {
-        "planner": ["claude", "codex", "droid", "ollama"],
-        "replanner": ["claude", "codex", "droid", "ollama"],
-        "critic": ["codex", "claude", "droid", "ollama"],
+        "planner": ["claude", "codex", "droid", "ollama", "ollama-cloud", "groq", "cerebras", "gemini", "mistral", "nvidia", "openrouter"],
+        "replanner": ["claude", "codex", "droid", "ollama", "ollama-cloud", "groq", "cerebras", "gemini", "mistral", "nvidia", "openrouter"],
+        "critic": ["codex", "claude", "droid", "groq", "cerebras", "ollama-cloud", "ollama", "gemini", "mistral", "nvidia", "openrouter"],
     },
-    "routing": {"strategy": "auto", "cooldown_s": 900},
+    # strategy: "auto" = quality first, cheapest within 0.05 of the best once measured | "frugal" = local, then free cloud,
+    # then subscription models small to large, escalating only when a cheaper model fails verification (use less Claude)
+    # | "measured" = best score | "config" = the role orders below.
+    "routing": {"strategy": "auto", "cooldown_s": 900, "slack": 0.25, "min_quality": 0.6, "escalate": True,
+                "max_escalations": 2},
     "limits": {"max_steps": 20, "max_model_calls": 8, "max_cost_usd": 0.0},
     "privacy": {"data_class": "project"},
     "sandbox": {"backend": "auto"},   # auto | bwrap | unshare | docker | none
@@ -69,7 +86,7 @@ def _read(path):
 
 
 def user_config_paths():
-    from .desktop.settings import default_home
+    from .paths import home as default_home
     return [os.path.join(os.path.expanduser("~"), ".config", "praxis", "praxis.toml"),
             os.path.join(default_home(), "praxis.toml")]
 
@@ -122,6 +139,37 @@ class Stack:
                 self.providers.append(op)
             except ProviderError as e:
                 self.skipped["ollama"] = str(e)[:120]
+        for pr in PRESETS:  # free cloud tiers: one provider per model, only if you gave a key
+            c = pc.get(pr.id, {})
+            if not c.get("enabled", True):
+                self.skipped[pr.id] = "disabled in config"
+                continue
+            key = secrets.get(pr.id, pr.key_env)
+            if not key:
+                self.skipped[pr.id] = f"no API key: `praxis keys set {pr.id}` (free key: {pr.signup_url})"
+                continue
+            models = list(c.get("models") or pr.models)
+            if not models:
+                self.skipped[pr.id] = f"no models chosen: `praxis free models {pr.id}` then set models in your config"
+                continue
+            for m in models:
+                if pr.kind == "ollama-cloud":
+                    self.providers.append(OllamaProvider(c.get("host", pr.base_url), m, api_key=key, label=pr.id,
+                                                         privacy=pr.privacy, tier="free", timeout=300))
+                else:
+                    self.providers.append(OpenAICompatProvider(
+                        pr.id, m, c.get("base_url", pr.base_url), api_key=key, key_env=pr.key_env, privacy=pr.privacy,
+                        tier="free", rpm=pr.rpm, max_prompt_tokens=pr.max_prompt_tokens))
+        budgets = {k: dict(v) for k, v in (cfg.get("budgets") or {}).items()}
+        for pr in PRESETS:  # a free tier's own documented limits become its budget (with 10% headroom)
+            derived = {}
+            if pr.rpd:
+                derived["calls_24h"] = int(pr.rpd * 0.9)
+            if pr.tpd:
+                derived["tokens_24h"] = int(pr.tpd * 0.9)
+            if derived:
+                budgets[pr.id] = {**derived, **budgets.get(pr.id, {})}
+        self.usage = UsageTracker(budgets, path=os.path.join(home(), "usage.jsonl"))
         d = pc.get("devin", {})
         if d.get("enabled"):
             dp = DevinProvider(d.get("org_id"))
@@ -139,7 +187,8 @@ class Stack:
             self.sandbox = detect(prefer=("bwrap", "unshare", "docker") if b == "auto" else (b,))
         r = cfg["routing"]
         self.router = Router(self.providers, cfg["roles"], registry, r["strategy"], r["cooldown_s"],
-                             role_tiers=cfg["role_tiers"])
+                             role_tiers=cfg["role_tiers"], usage=self.usage, min_quality=r.get("min_quality", 0.6),
+                             slack=r.get("slack", 0.25))
         # one delegate per family, chosen by the role's tier preference (default: balanced)
         self.agents = {}
         pref = cfg["role_tiers"].get("delegate", [])

@@ -4,7 +4,9 @@ import os
 import sys
 import time
 
-from .config import build_stack
+from . import secrets
+from .config import build_stack, load_config
+from .free_tiers import DISCONTINUED, PRESETS, preset
 from .events import EventLog
 from .executive import Executive
 from .hardware import detect_hardware, profile_from_config
@@ -43,7 +45,9 @@ def _executive(ws, log, stack, a):
                      critic=not getattr(a, "no_critic", False) and len(stack.providers) > 1,
                      max_steps=lim["max_steps"], max_model_calls=lim["max_model_calls"],
                      max_cost_usd=lim["max_cost_usd"] or None, max_checkpoint_mb=lim.get("max_checkpoint_mb", 512),
-                     data_class="private" if getattr(a, "private", False) else stack.cfg["privacy"]["data_class"],
+                     escalate=stack.cfg["routing"].get("escalate", True), max_escalations=stack.cfg["routing"].get("max_escalations", 2),
+                     data_class=("private" if getattr(a, "private", False) else getattr(a, "data_class", None)
+                                 or stack.cfg["privacy"]["data_class"]),
                      sandbox=stack.sandbox)
 
 
@@ -107,6 +111,85 @@ def cmd_doctor(stack, ws, ping, ping_all=False):
     return 0 if ok else 1
 
 
+def _limits(pr):
+    bits = []
+    if pr.rpm:
+        bits.append(f"{pr.rpm}/min")
+    if pr.rpd:
+        bits.append(f"{pr.rpd:,}/day")
+    if pr.tpd:
+        bits.append(f"{pr.tpd // 1_000_000}M tok/day" if pr.tpd >= 1_000_000 else f"{pr.tpd // 1000}K tok/day")
+    return ", ".join(bits) or "limits unpublished"
+
+
+def cmd_keys(a):
+    import getpass
+    ids = [p.id for p in PRESETS]
+    if a.action == "list":
+        for n in secrets.names():
+            print(f"  {n:<14}{secrets.mask(secrets.get(n) or '')}")
+        if not secrets.names():
+            print("  (no stored keys; environment variables also work, see `praxis free`)")
+        return 0
+    if a.name not in ids:
+        print(f"choose one of: {', '.join(ids)}"); return 2
+    if a.action == "remove":
+        secrets.remove(a.name); print(f"removed {a.name}"); return 0
+    value = getpass.getpass(f"{a.name} API key (input hidden): ").strip()
+    if len(value) < 8:
+        print("that does not look like a key"); return 2
+    secrets.set(a.name, value)
+    print(f"saved {a.name} ({secrets.mask(value)}) to your private key file; it is never logged or sent anywhere but {a.name}")
+    return 0
+
+
+def cmd_free(a, ws):
+    cfg = load_config(ws)
+    if a.action == "list":
+        print("FREE CLOUD TIERS  (read 2026-10-02; a 429 from the provider always wins over these numbers)\n")
+        print(f"  {'id':<14}{'status':<12}{'data':<8}{'limits':<34}models")
+        for pr in PRESETS:
+            on = cfg["providers"].get(pr.id, {}).get("enabled", True)
+            has = bool(secrets.get(pr.id, pr.key_env))
+            status = "disabled" if not on else "READY" if has else "no key"
+            cls = "trusted" if pr.privacy == "cloud" else "OPEN"
+            models = ", ".join(cfg["providers"].get(pr.id, {}).get("models") or pr.models) or "(choose: praxis free models " + pr.id + ")"
+            print(f"  {pr.id:<14}{status:<12}{cls:<8}{_limits(pr):<34}{models}")
+        print("\n  data: 'trusted' = documents no training on API data (used for project goals).")
+        print("        'OPEN'    = free-tier terms may train/log/human-review your prompts: only for goals you mark")
+        print("                    --data-class open, and never when a credential is detected in the prompt.\n")
+        print("  Get a free key, then:  praxis keys set <id>   (or set the environment variable)")
+        for pr in PRESETS:
+            print(f"    {pr.id:<14}{pr.signup_url}   env {pr.key_env}")
+        print("\nDiscontinued free paths (not integrated):")
+        for d in DISCONTINUED:
+            print(f"  - {d.name}: ended {d.ended}. {d.note}")
+        return 0
+    if not a.target or a.target not in [p.id for p in PRESETS]:
+        print("name a provider: " + ", ".join(p.id for p in PRESETS)); return 2
+    pr = preset(a.target)
+    key = secrets.get(pr.id, pr.key_env)
+    if not key:
+        print(f"no key for {pr.id}: praxis keys set {pr.id}"); return 1
+    from .openai_compat import OpenAICompatProvider
+    from .providers import OllamaProvider
+    try:
+        if pr.kind == "ollama-cloud":
+            prov = OllamaProvider(pr.base_url, "gpt-oss:120b", api_key=key, label=pr.id, privacy="cloud", tier="free")
+        else:
+            prov = OpenAICompatProvider(pr.id, (pr.models or ("x",))[0], pr.base_url, api_key=key, key_env=pr.key_env,
+                                        privacy=pr.privacy, tier="free", rpm=pr.rpm)
+        if a.action == "models":
+            ids = prov.models() if pr.kind == "ollama-cloud" else prov.discover(free_only=(pr.id == "openrouter"))
+            ids = [m["name"] if isinstance(m, dict) else m for m in ids]
+            print("\n".join(ids) or "(none)"); return 0
+        out = prov.complete("planner", [{"role": "user", "content": "Reply with exactly: PONG"}])
+        print(f"{pr.id}: {'ok' if 'PONG' in out.upper() else 'unexpected reply: ' + out[:40]}")
+        return 0
+    except Exception as e:
+        print(f"{pr.id}: {str(e)[:200]}"); return 1
+
+
 def main(argv=None):
     _safe_streams()
     ap = argparse.ArgumentParser(prog="praxis")
@@ -119,7 +202,12 @@ def main(argv=None):
         sp.add_argument("--workspace", default=".")
         return sp
     r = add("run", (["goal"], {}), (["--private"], {"action": "store_true", "help": "local models only"}),
+            (["--data-class"], {"choices": ["private", "project", "open"],
+                                "help": "private=local only; project=+trusted cloud (default); open=+free tiers that may train"}),
             (["--no-critic"], {"action": "store_true"}))
+    add("free", (["action"], {"nargs": "?", "choices": ["list", "models", "test"], "default": "list"}),
+        (["target"], {"nargs": "?"}))
+    add("keys", (["action"], {"choices": ["set", "list", "remove"]}), (["name"], {"nargs": "?"}))
     add("resume", (["goal_id"], {"nargs": "?"}))
     add("status")
     add("why", (["event_id"], {"type": int}))
@@ -143,6 +231,10 @@ def main(argv=None):
         ok, bad = log.verify_chain()
         print("log intact" if ok else f"LOG TAMPERED at event {bad}")
         return 0 if ok else 2
+    if a.cmd == "keys":
+        return cmd_keys(a)
+    if a.cmd == "free":
+        return cmd_free(a, ws)
     stack = build_stack(ws)
     if a.cmd == "doctor":
         return cmd_doctor(stack, ws, a.ping, a.ping_all)

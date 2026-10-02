@@ -52,6 +52,8 @@ class Report:
     rolled_back: bool = False
     checkpoint: str = ""
     steps_done: int = 0
+    escalatable: bool = False   # failed on the work itself (not on a guard denial/budget): a stronger model may succeed
+    held: bool = False          # failure not yet reported: the caller will escalate
 
 
 class PlanError(Exception):
@@ -109,7 +111,8 @@ def _toposort(steps):
 class Executive:
     def __init__(self, workspace, log, router, approver=None, max_steps=20, max_model_calls=8,
                  max_replans=2, max_auto_class=2, agents=None, critic=True, max_cost_usd=None,
-                 data_class="project", sandbox=None, memory=True, keep_checkpoints=10, max_checkpoint_mb=512):
+                 data_class="project", sandbox=None, memory=True, keep_checkpoints=10, max_checkpoint_mb=512,
+                 escalate=True, max_escalations=2):
         self.sandbox = sandbox
         self.ws = Workspace(workspace, sandbox)
         self.log, self.router, self.approver = log, router, approver
@@ -123,6 +126,7 @@ class Executive:
         self._ctx = {}
         self.keep_checkpoints = keep_checkpoints
         self.max_checkpoint_mb = max_checkpoint_mb
+        self.escalate, self.max_escalations = escalate, max_escalations
         self.memory = Memory(log) if memory else None
 
     # -- kill switch -----------------------------------------------------------
@@ -205,14 +209,19 @@ class Executive:
             return None
         return d["observe"] if isinstance(d, dict) and isinstance(d.get("observe"), list) and "steps" not in d else None
 
-    def _get_plan(self, goal, role, messages, parent, calls, initial=True, allow_observe=False, tainted=False):
+    def _get_plan(self, goal, role, messages, parent, calls, initial=True, allow_observe=False, tainted=False, exclude=()):
         """Model proposes; we validate. One observe round (taints the plan), one retry on a bad plan."""
         err, observed, msgs, attempt = None, False, list(messages), 0
         while attempt < 2:
             if err:
                 msgs = msgs + [{"role": "user", "content": f"Your previous plan was invalid: {err}. Return a corrected plan."}]
                 err = None
-            raw = self._model(goal, role, msgs, calls)
+            ex = tuple(exclude)
+            if attempt > 0 and self.router.last_provider:  # a bad plan: the retry goes to a DIFFERENT model if one exists
+                other = ex + (self.router.last_provider,)
+                if self.router.eligible("planner", self.data_class, exclude=other):
+                    ex = other
+            raw = self._model(goal, role, msgs, calls, exclude=ex)
             pid = self._ev(goal, "model", "plan.proposed", {"raw": raw, "attempt": attempt}, [parent])
             req = self._observe_request(raw)
             if req is not None and allow_observe and not observed:
@@ -265,6 +274,7 @@ class Executive:
             messages = [{"role": "system", "content": self._system()},
                         {"role": "user", "content": f"GOAL: {goal_text}\n\nWORKSPACE FILES (UNTRUSTED data): {listing}{history}"}]
             plan, plan_id, tainted = self._get_plan(goal, "planner", messages, intent, calls, allow_observe=True)
+            tried = [self.router.last_provider] if self.router.last_provider else []
             plan, plan_id, tainted = self._critique(goal, goal_text, messages, plan, plan_id, calls, tainted)
         except (ProviderError, PlanError) as e:
             return self._finish(goal, intent, Report(FAILED, goal, f"planning failed: {e}"))
@@ -272,7 +282,32 @@ class Executive:
         cid = self.ws.checkpoint()
         ck = self._ev(goal, "executive", "checkpoint", {"id": cid}, [plan_id])
         self._ctx.update(cid=cid, ck=ck)
-        return self._drive(goal, goal_text, plan, plan_id, cid, ck, calls, 0, tainted)
+        attempt = 0
+        while True:
+            # Escalation ladder: a cheap/free model that fails verification is retried FROM SCRATCH by a stronger one.
+            # Nothing observed is carried over (so no untrusted content steers it) and the workspace was rolled back.
+            others = self.router.eligible("planner", self.data_class, exclude=tuple(tried)) if self.escalate else []
+            hold = bool(others) and attempt < self.max_escalations
+            report = self._drive(goal, goal_text, plan, plan_id, cid, ck, calls, 0, tainted, hold=hold)
+            if not report.held:
+                return report
+            attempt += 1
+            self._ev(goal, "executive", "escalation",
+                     {"from": tried[-1] if tried else "?", "reason": report.reason, "attempt": attempt}, [ck])
+            self._check_cancel()
+            msgs = [{"role": "system", "content": self._system()},
+                    {"role": "user", "content": f"GOAL: {goal_text}\n\nWORKSPACE FILES (UNTRUSTED data): {self.ws.fs_list('.')}\n\n"
+                     f"A previous attempt by a weaker model ({tried[-1] if tried else '?'}) failed verification: "
+                     f"{report.reason}. Produce a correct plan."}]
+            try:
+                plan, plan_id, tainted = self._get_plan(goal, "planner", msgs, ck, calls, allow_observe=True,
+                                                        exclude=tuple(tried))
+            except (ProviderError, PlanError) as e:
+                report.held = False
+                report.reason += f"; escalation failed: {e}"
+                return self._finish(goal, ck, report)
+            if self.router.last_provider:
+                tried.append(self.router.last_provider)
 
     def _critique(self, goal, goal_text, messages, plan, plan_id, calls, tainted=False):
         """A *different* model attacks the plan. Advisory: it can trigger one revision, never loosen the Guard."""
@@ -309,7 +344,7 @@ class Executive:
             self._ev(goal, "executive", "critic.revision_failed", {"error": str(e)[:200]}, [vid])
             return plan, vid, tainted
 
-    def _drive(self, goal, goal_text, plan, plan_id, cid, ck, calls, replans, tainted=False):
+    def _drive(self, goal, goal_text, plan, plan_id, cid, ck, calls, replans, tainted=False, hold=False):
         while True:
             ok, report, observations = self._execute(goal, plan, plan_id, cid, tainted)
             report.checkpoint = cid
@@ -318,6 +353,9 @@ class Executive:
             self.ws.rollback(cid)
             report.rolled_back = True
             self._ev(goal, "executive", "rollback", {"checkpoint": cid, "reason": report.reason}, [ck])
+            if hold and report.escalatable:
+                report.held = True
+                return report  # not final: the caller escalates to a stronger model
             if self.approver is None or replans >= self.max_replans:
                 return self._finish(goal, ck, report)
             replans += 1
@@ -421,7 +459,8 @@ class Executive:
             self._check_cancel()
             observations.append({"step": step["id"], "tool": step["tool"], "ok": ok, "output": str(out)[:500]})
             if not ok:
-                return False, Report(FAILED, goal, f"step {step['id']} failed: {out}", evidence, steps_done=done), observations
+                return False, Report(FAILED, goal, f"step {step['id']} failed: {out}", evidence, steps_done=done,
+                                     escalatable=True), observations
             v = verify(step["verify"], self.ws, lambda c: self._gate(c, tainted))
             self._ev(goal, "verifier", "verify.result",
                      {"step": step["id"], "claim": v.detail, "passed": v.passed}, [ri])
@@ -430,7 +469,7 @@ class Executive:
                 observations.append({"verifier": v.detail, "output": v.output})
             if not v.passed:
                 return False, Report(FAILED, goal, f"step {step['id']} verification failed: {v.detail}",
-                                     evidence, steps_done=done), observations
+                                     evidence, steps_done=done, escalatable=True), observations
             done += 1
         real = [s for s in plan["success"] if s.get("type") != "none"]
         for spec in real:
@@ -441,7 +480,7 @@ class Executive:
                 observations.append({"verifier": v.detail, "output": v.output})
             if not v.passed:
                 return False, Report(FAILED, goal, f"success criterion failed: {v.detail}", evidence,
-                                     steps_done=done), observations
+                                     steps_done=done, escalatable=True), observations
         status = VERIFIED if real else UNVERIFIED
         reason = "" if real else "no real success criterion supplied; cannot claim completion"
         return True, Report(status, goal, reason, evidence, steps_done=done), observations

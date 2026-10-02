@@ -119,7 +119,8 @@ def pick_for_hardware(models, profile, registry=None, prefer=(), min_tps=6.0):
         active = cat.active_b if cat else total
         entry = (registry.data.get(f"ollama/{name}", {}).get("planning", {}) if registry is not None else {})
         tps = entry.get("tokens_per_s") or estimate_tokens_per_s(size, total, active, profile)
-        cands.append({"name": name, "tps": tps, "score": entry.get("score"), "equiv": math.sqrt(total * active)})
+        cands.append({"name": name, "tps": tps, "score": entry.get("score"),
+                      "equiv": cat.rank if cat else math.sqrt(total * active)})
     if not cands:
         return None
     names = {c["name"] for c in cands}
