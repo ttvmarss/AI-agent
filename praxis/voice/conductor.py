@@ -52,6 +52,8 @@ class Conductor:
             original = rest if heard_wake else (text or "").strip()
             intent = wake.parse(original, busy=busy, approving=approving, risky=risky)
             self.log("heard", text, intent.kind)
+            if intent.kind == "approve" and not heard_wake:      # a television or a bystander saying "approve" must never run anything
+                return "ignored: an approval must start with my name"
             return self._act(intent, pending, heard_wake, busy, now)
 
     def _act(self, it, pending, heard_wake, busy, now):
@@ -71,11 +73,11 @@ class Conductor:
             self._attend(now)
             return k
         if k == "confirm_risky":
-            self.say("That one is risky. Say approve to allow it, or deny.")
+            self.say("That one is risky. Say Praxis, approve to allow it, or deny.")
             return "asked again"
         if k == "unknown":
             if now - self.last_unknown_at > 8.0:
-                self.say("I'm waiting for your answer. Say approve, or deny.")
+                self.say("I'm waiting for your answer. Say Praxis, approve, or deny.")
                 self.last_unknown_at = now
             return "waiting for answer"
         if k == "stray_answer":
@@ -143,7 +145,11 @@ class Conductor:
                     if e.id in self.spoken_reports:
                         continue
                     self.spoken_reports.add(e.id)
-                sentence, urgent = narrator.for_event(e.type, e.payload)
+                try:
+                    sentence, urgent = narrator.for_event(e.type, e.payload)
+                except Exception as ex:                          # one odd event must never stop the others being spoken
+                    self.log("narrate-error", type(ex).__name__, str(ex))
+                    continue
                 if sentence:
                     self.say(sentence, urgent)
                     if urgent:
@@ -177,4 +183,4 @@ class Conductor:
                     self.say("No answer, so I denied that. Nothing was changed.", True)
                 elif not reminded and now - at > self.approval_s / 3:
                     self.asked[req.id][1] = True
-                    self.say("Still waiting: approve or deny?", True)
+                    self.say("Still waiting. Say Praxis, approve, or deny.", True)

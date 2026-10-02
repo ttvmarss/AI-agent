@@ -203,6 +203,9 @@ class Controller:
             ex = self._make_executive(log, data_class, no_critic)
             with self._lock:
                 self._executive = ex
+                already = self._stopping
+            if already:                        # Stop was pressed before there was anything to stop
+                ex.cancel()
             if self._on_executive_built:
                 self._on_executive_built()
             action(ex)
@@ -221,10 +224,12 @@ class Controller:
     def stop(self):
         with self._lock:
             ex = self._executive
-            if self._state != "working" or ex is None:
+            if self._state != "working":
                 return
-            self._stopping = True
+            self._stopping = True              # also when the executive is not built yet: _work cancels it the moment it exists
             pending = list(self._approvals.values())
+        if ex is None:
+            return
         ex.cancel()          # kills in-flight CLI calls, stops before the next step, rolls back
         for req, evt, res in pending:  # a human who presses Stop is not going to answer the dialog
             res[0] = False

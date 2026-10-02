@@ -53,7 +53,7 @@ ears, Piper for its voice) and acts only when you say its name first. *"Praxis, 
 repeats what it understood, plans, does, verifies, and tells you the result in one sentence. After it speaks you have ~10 s to follow
 up without the name. *"Praxis, stop"* cancels at once. *"Praxis, status"*, *"frugal / balanced / quality"*, *"private / project / open"*,
 *"resume"* and *"mute"* (F4 turns listening back on) work too. **Approvals are spoken in full and need an answer: a plain "yes" is
-enough only for mild actions; anything risky needs the word "approve"; silence is a denial.** If a microphone or model is missing it says
+enough only for mild actions; anything risky needs the word "approve", and every approval must start with its name so a television can't approve for you; silence is a denial.** If a microphone or model is missing it says
 why on screen and shows a one-line typing field instead. The microphone is deaf while it speaks, so it never answers itself.
 
 ## Run
@@ -66,7 +66,7 @@ python -m praxis hardware           # your machine + recommended local models + 
 python -m praxis bench --max-cost 3 # MEASURE every provider (the router then uses the scores); --holdout for untuned tasks
 python -m praxis run "..." --workspace ./proj     # also: resume | status | why | rollback | verify-log | pull <tag>
 pip install -e ".[ui,voice]"         # optional: `praxis`, `praxis-desktop`, the PySide6 window, and hands-free voice
-python -m unittest discover -s tests -t .        # 493 tests (UI tests need PySide6 / tkinter; they skip otherwise)
+python -m unittest discover -s tests -t .        # 530+ tests (UI tests need PySide6 / tkinter; they skip otherwise)
 ```
 
 Config: copy [`praxis.toml.example`](praxis.toml.example) to `~/.praxis/praxis.toml`. A `praxis.toml` inside a project folder is untrusted and

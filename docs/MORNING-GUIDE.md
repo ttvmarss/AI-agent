@@ -120,7 +120,7 @@ If you installed the voice packages, the first launch downloads the speech model
 PRAXIS says "PRAXIS online". Speak normally; **start with its name**: *"Praxis, make a file called notes.txt with today's tasks."* It repeats
 what it understood, works, and tells you the result. Other things to say: *"Praxis, status"*, *"stop"*, *"mute"* (F4 listens again),
 *"frugal"* / *"balanced"* / *"quality"*, *"private"* / *"project"* / *"open"*. When it asks for approval it reads the action out loud:
-say **"approve"** (risky actions need that exact word) or **"deny"**; silence denies. If it mishears you, the words it heard are shown
+say **"Praxis, approve"** (risky actions need that exact word; "Praxis, yes" is enough only for mild ones; your name is always required to approve, so a TV can't) or **"deny"**; silence denies. If it mishears you, the words it heard are shown
 on screen. No microphone or model? It tells you why and gives you a one-line typing field. Headphones help if your speakers are loud.
 
 ## 6. How to use it safely

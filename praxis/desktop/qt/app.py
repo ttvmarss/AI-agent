@@ -78,6 +78,7 @@ class MainWindow(QMainWindow):
         self.voice_factory, self.voice, self.voice_error, self.voice_progress = voice_factory, None, "", ""
         self._voice_started, self._voice_msg_shown, self._mute_request, self._heard_at = False, False, False, 0.0
         self._shown, self._loaded_ws, self._closing = set(), None, False
+        self._ask_queue, self._asking = [], False
         self._prev_state, self.hint = None, ""
         self.setWindowTitle("PRAXIS")
         self.setMinimumSize(760, 520)
@@ -243,7 +244,8 @@ class MainWindow(QMainWindow):
             for req in u.approvals:
                 if req.id not in self._shown:
                     self._shown.add(req.id)
-                    self._ask(req)
+                    self._ask_queue.append(req)
+                    QTimer.singleShot(0, self._next_approval)       # NOT inline: a modal dialog inside this timer's slot would freeze the timer
             if state == "idle" and self._prev_state in ("working", "stopping"):
                 self.prompt.setFocus()
         else:
@@ -264,6 +266,8 @@ class MainWindow(QMainWindow):
         if self.voice is not None:
             snap = self.voice.snapshot()
             self.core.set_voice(snap["state"], snap["level"], snap["speak_level"], snap["attentive"])
+            if self.voice.unspoken:                      # it could not speak (no speaker, synthesis failed): say it on screen instead
+                self.core.set_caption(self.voice.unspoken[:200], "warn"); self.voice.unspoken = ""
             tr = self.voice.transcripts
             if tr and tr[-1][0] > self._heard_at and not tr[-1][2].startswith("ignored"):
                 self._heard_at = tr[-1][0]
@@ -280,6 +284,19 @@ class MainWindow(QMainWindow):
             return ""
         return (f"ROUTING {STRATEGY_BACK.get(st.router.strategy, st.router.strategy).upper()}   ·   "
                 f"DATA {c.effective_data_class().upper()}   ·   {len(st.providers)} MODELS")
+
+    def _next_approval(self):
+        if self._asking or not self._ask_queue:
+            return
+        self._asking = True
+        try:
+            req = self._ask_queue.pop(0)
+            if any(r.id == req.id for r in self.controller.pending_approvals()):      # it may have been answered by voice meanwhile
+                self._ask(req)
+        finally:
+            self._asking = False
+        if self._ask_queue and not self._closing:
+            QTimer.singleShot(0, self._next_approval)
 
     def _ask(self, req):
         dlg = ApprovalDialog(self, req)

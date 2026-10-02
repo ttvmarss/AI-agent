@@ -339,19 +339,42 @@ class OneScreen(unittest.TestCase):
         self.assertTrue(pump(self.verified(win)))
         self.assertTrue(os.path.exists(os.path.join(ws, "made.txt"))); self.assertEqual(len(pilot.seen), 1)
 
+    def test_the_screen_stays_alive_while_an_approval_dialog_is_open_so_you_can_still_mute_by_voice(self):
+        # Found by the break-it campaign: the dialog ran a nested loop inside the timer's own slot, which froze that timer: no voice
+        # state, no caption, and "praxis, mute" did nothing for as long as the dialog was open.
+        win, ctl, ws = self.voiced(responses=[tdc.Approvals.PLAN], agents={"claude": FakeAgent()})
+        seen = {"muted": False, "t0": None}
+
+        def drive():                                              # runs from inside the dialog's nested loop, like a user would
+            d = QApplication.activeModalWidget()
+            if not isinstance(d, ApprovalDialog):
+                return
+            if seen["t0"] is None:
+                seen["t0"] = time.time(); win._mute_request = True    # what the voice thread sets when it hears "praxis, mute"
+            if win.voice.state == "muted":
+                seen["muted"] = True; d.deny_btn.click()
+            elif time.time() - seen["t0"] > 3:
+                d.deny_btn.click()                                # give up: the screen froze
+        t = QTimer(); t.timeout.connect(drive); t.start(20); self.addCleanup(t.stop)
+        self.assertTrue(ctl.submit("delegate it"))
+        self.assertTrue(pump(lambda: ctl.state == "idle" and seen["t0"] is not None, 15))
+        self.assertTrue(seen["muted"], "the screen froze while the dialog was open")
+
     def test_an_approval_the_controller_still_lists_is_not_asked_again_on_the_next_tick(self):
         from praxis.desktop.controller import Update
         win, ctl, ws = self.make()
         req = ApprovalRequest("same-id", "shell.run", 4, {"cmd": "python build.py"}, "not a known-safe command")
         asked = []
         win._ask = lambda r: asked.append(r.id)
+        other = ApprovalRequest("next-id", "shell.run", 4, {"cmd": "python test.py"}, "r")
+        ctl.pending_approvals = lambda: [req, other]
         ctl.poll = lambda: Update([], View(), [req], "idle", "")
         for _ in range(4):
-            win._update()
+            win._update(); pump(lambda: False, 0.05)                   # the dialog is opened from the next turn of the event loop
         self.assertEqual(asked, ["same-id"])
         other = ApprovalRequest("next-id", "shell.run", 4, {"cmd": "python test.py"}, "r")
         ctl.poll = lambda: Update([], View(), [req, other], "idle", "")
-        win._update()
+        win._update(); pump(lambda: False, 0.1)
         self.assertEqual(asked, ["same-id", "next-id"])
 
     def test_approval_text_for_dangerous_commands_is_the_exact_command(self):

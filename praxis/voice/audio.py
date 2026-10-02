@@ -87,6 +87,7 @@ class Segmenter:
 
     def reset(self):
         self.buf, self.pre, self.speech, self.silent, self.voiced = b"", [], [], 0, 0
+        self.lvl_sum, self.lvl_sq = 0.0, 0.0
         self.floor, self.in_speech, self.level, self._run = 0.01, False, 0.0, 0
 
     @property
@@ -119,15 +120,26 @@ class Segmenter:
             if self._run < 2:                              # one loud frame is a click, not speech
                 return None
             self.in_speech, self.speech, self.silent, self.voiced = True, list(self.pre), 0, self._run
+            self.lvl_sum, self.lvl_sq = lvl * self._run, lvl * lvl * self._run
             self.pre = []
             return None
         self.speech.append(frame)
+        self.lvl_sum += lvl; self.lvl_sq += lvl * lvl
         if loud:
             self.silent, self.voiced = 0, self.voiced + 1
         else:
             self.silent += 1
-        if self.silent >= self.hang_frames or len(self.speech) >= self.max_frames:
+        if self.silent >= self.hang_frames:
             return self._end()
+        if len(self.speech) >= self.max_frames:
+            n = max(len(self.speech), 1)
+            mean = self.lvl_sum / n
+            var = max(0.0, self.lvl_sq / n - mean * mean)
+            if mean > 0 and math.sqrt(var) / mean < 0.2:        # no pause AND no syllables: a fan, a machine, steady music
+                self.floor = max(self.floor, mean)              # learn it as the new background level and drop it
+                self._end()
+                return None
+            return self._end()                                  # real, uninterrupted speech: cut at the maximum as before
         return None
 
     def _end(self):

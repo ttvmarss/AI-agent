@@ -1,5 +1,6 @@
 """Speech recognition behind one tiny interface. The real engine is faster-whisper running locally on the CPU."""
 import array
+import re
 import threading
 
 # Whisper invents these on silence or noise. They are never a command.
@@ -9,6 +10,17 @@ HALLUCINATIONS = {"thank you", "thanks for watching", "thank you for watching", 
 
 # A hint for the decoder: the words this system listens for, so "approve" is not heard as "prove".
 VOCAB = "Praxis. Praxis, approve. Praxis, deny. Praxis, stop. Praxis, status. Approve. Deny."
+
+
+def looping(text):
+    """Whisper in noise sometimes falls into a loop and repeats one phrase dozens of times. That is never a command."""
+    words = [w for w in re.findall(r"[a-z0-9']+", (text or "").lower())]
+    if len(words) < 8:
+        return False
+    if len(set(words)) / len(words) < 0.3:                       # very few distinct words for the length
+        return True
+    sentences = [s.strip() for s in re.split(r"[.!?]+", (text or "").lower()) if s.strip()]
+    return any(sentences.count(s) >= 3 for s in set(sentences))
 
 
 class Recognizer:
@@ -51,4 +63,6 @@ class WhisperRecognizer(Recognizer):
                 continue
             parts.append(s.text.strip())
         text = " ".join(parts).strip()
+        if looping(text):
+            return ""
         return "" if text.lower().strip(" .!?,") in HALLUCINATIONS else text

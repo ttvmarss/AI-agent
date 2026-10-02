@@ -21,12 +21,25 @@ from PySide6.QtGui import (QColor, QFont, QFontMetricsF, QImage, QLinearGradient
                            QPolygonF, QRadialGradient)
 from PySide6.QtWidgets import QToolTip, QWidget
 
+from . import hologram as H
 from . import particles as P
 from .theme import C, COST_COLOR, COST_NAME, PRIVACY_NAME, fonts, qc
 
 
 def pressure_color(x):
     return "ok" if x < 0.6 else "warn" if x < 0.9 else "bad"
+
+
+def fin(x, lo, hi, default=0.0):
+    """A number the painter can trust: finite and inside [lo, hi]. A NaN or infinity reaching Qt geometry is a hard crash
+    (found by the stress campaign), so everything that arrives from outside the widget is passed through here."""
+    try:
+        x = float(x)
+    except (TypeError, ValueError):
+        return default
+    if x != x or x in (float("inf"), float("-inf")):
+        return default
+    return max(lo, min(hi, x))
 
 
 def rgb(c, a=255):
@@ -44,8 +57,8 @@ REDUCED = bool(os.environ.get("PRAXIS_REDUCE_MOTION"))
 RING_NAMES = ("PLAN", "ACT", "VERIFY")
 VOICE_BARS = 96
 VOICE_TAG = {"listening": "LISTENING  \u00b7  say \u201cpraxis\u201d", "hearing": "HEARING", "thinking": "THINKING",
-             "speaking": "SPEAKING", "muted": "MIC OFF  \u00b7  F4"}
-VOICE_COLOR = {"listening": "accent", "hearing": "accent", "thinking": "violet", "speaking": "ok", "muted": "warn"}
+             "speaking": "SPEAKING", "muted": "MIC OFF  \u00b7  F4", "offline": "NO MICROPHONE"}
+VOICE_COLOR = {"listening": "accent", "hearing": "accent", "thinking": "violet", "speaking": "ok", "muted": "warn", "offline": "bad"}
 RING_HALF, RING_HEIGHT = P.ring_extent()
 
 
@@ -93,7 +106,7 @@ class CoreView(QWidget):
             self.field.dyn.set_mode(mode)
             # calm states do not need 30 fps; saves CPU while you are just reading
             self.timer.setInterval(80 if REDUCED else 33 if mode in ("working", "starting", "stopping", "ok") else 42)
-        self.mode, self.progress, self.title, self.subtitle = mode, progress, title, subtitle
+        self.mode, self.progress, self.title, self.subtitle = mode, fin(progress, 0.0, 1.0), str(title), str(subtitle)
 
     def set_pipeline(self, plan="none", steps=(), checks=(), sealed=False):
         """The real pipeline, for the three rings. plan: none | planning | ready | failed. steps: each step's state.
@@ -102,7 +115,7 @@ class CoreView(QWidget):
 
     def set_voice(self, state, level=0.0, speak=0.0, attentive=False):
         """The voice loop's real state: `level` is the live microphone loudness, `speak` the loudness of PRAXIS's own voice."""
-        self.voice = dict(state=state, level=level, speak=speak, attentive=attentive)
+        self.voice = dict(state=state, level=fin(level, 0.0, 10.0), speak=fin(speak, 0.0, 10.0), attentive=bool(attentive))
 
     def voice_amplitude(self):
         """What the voice ring should show right now, 0..1, from the real audio (never invented)."""
@@ -114,7 +127,13 @@ class CoreView(QWidget):
         return 0.0
 
     def set_nodes(self, nodes):
-        self.nodes = nodes
+        clean = []
+        for n in nodes:
+            n = dict(n)
+            n["pressure"] = fin(n.get("pressure"), 0.0, 1.0)
+            n["cooling_s"] = int(fin(n.get("cooling_s"), 0, 10 ** 7))
+            clean.append(n)
+        self.nodes = clean
 
     def set_active(self, name):
         self.active = name
@@ -172,7 +191,10 @@ class CoreView(QWidget):
     # ---- time ----------------------------------------------------------------------------------------------------
     def advance(self, dt):
         """Step the simulation by dt seconds (the timer calls this with real time; previews and tests step it by hand)."""
-        self.t += dt
+        dt = fin(dt, 0.0, 0.25, 0.0)                      # NaN, negative or a long stall (laptop lid) must not poison the simulation
+        if dt <= 0.0:
+            return
+        self.t = (self.t + dt) % 100000.0
         self.field.advance(dt * (0.2 if REDUCED else 1.0))
         self.cap_t += dt
         self._vacc += dt
@@ -306,6 +328,7 @@ class CoreView(QWidget):
         self._stars(p, g)
         self._aura(p, g, tint, mixv)
         self._orbit_and_links(p, g)
+        self._projector(p, g, tint)
         # everything that glows goes into one buffer, which is then bloomed
         if self._buf is None or self._buf.size() != self.size():
             self._buf = QImage(self.size(), QImage.Format_ARGB32_Premultiplied)
@@ -320,13 +343,24 @@ class CoreView(QWidget):
         self._ripples(q, g)
         q.end()
         p.setCompositionMode(QPainter.CompositionMode_Plus)
+        flick = 1.0 if REDUCED else H.flicker(self.t)
+        p.setOpacity(flick)
         p.drawImage(0, 0, buf)
+        if not REDUCED and self.quality.level < 2:                # the ghost: a faint second image, as light in air has
+            gx, gy = H.ghost_offset(self.t)
+            p.setOpacity(0.16 * flick); p.drawImage(QPointF(gx, gy), buf)
+        gl = (False, 0.0, 0.0) if REDUCED else H.glitch(self.t)
+        if gl[0]:                                                 # a rare horizontal tear: one band shifted sideways
+            y0 = int(gl[1] * h); band = max(6, h // 28)
+            p.setOpacity(0.8); p.drawImage(QPointF(gl[2], y0), buf, QRectF(0, y0, w, band))
+        p.setOpacity(flick)
         if self.quality.level < 2:                                # bloom: two blurred copies added back on top
             small = buf.scaled(max(8, w // 4), max(8, h // 4), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
             p.setOpacity(0.9); p.drawImage(QRectF(0, 0, w, h), small)
             tiny = small.scaled(max(4, w // 14), max(4, h // 14), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
             p.setOpacity(0.75); p.drawImage(QRectF(0, 0, w, h), tiny)
-            p.setOpacity(1.0)
+        p.setOpacity(1.0)
+        self._sweep(p, g, tint)
         p.setCompositionMode(QPainter.CompositionMode_SourceOver)
         p.drawPixmap(0, 0, self._overlay(w, h))
         self._nodes(p, g)
@@ -334,6 +368,52 @@ class CoreView(QWidget):
         p.end()
         if self.quality.record((time.perf_counter() - t0) * 1000.0):
             self.field.resize(self.quality.n)
+
+    def _projector(self, p, g, tint):
+        """The emitter the hologram stands on: a perspective grid, a glowing ring, and a faint beam rising from it."""
+        w, h, cx = g["w"], g["h"], g["cx"]
+        rx = max(60.0, min(w * 0.30, g["R"] * RING_HALF * 1.05))
+        ry = rx * 0.17
+        cy = min(h - 46.0 - ry, g["cy"] + g["R"] * RING_HEIGHT + ry * 1.2)
+        col = rgb(tint)
+        p.save()
+        p.setCompositionMode(QPainter.CompositionMode_Plus)
+        beam = QLinearGradient(0, cy, 0, g["top"])
+        c0 = QColor(col); c0.setAlpha(15); c1 = QColor(col); c1.setAlpha(0)
+        beam.setColorAt(0.0, c0); beam.setColorAt(1.0, c1)
+        p.setPen(Qt.NoPen); p.setBrush(beam)
+        for k in (1.0, 0.78, 0.56):                             # nested cones: a soft edge instead of a hard stage-light trapezoid
+            p.drawPolygon(QPolygonF([QPointF(cx - rx * 0.92 * k, cy), QPointF(cx - rx * 0.5 * k, g["top"]),
+                                     QPointF(cx + rx * 0.5 * k, g["top"]), QPointF(cx + rx * 0.92 * k, cy)]))
+        rings, spokes = H.grid_lines(6, 18, 0.0 if REDUCED else self.t)
+        for f in rings:
+            a = int(70 * H.ring_alpha(f))
+            if a <= 0:
+                continue
+            c = QColor(col); c.setAlpha(a)
+            p.setPen(QPen(c, 1.0)); p.setBrush(Qt.NoBrush)
+            p.drawEllipse(QPointF(cx, cy), rx * f, ry * f)
+        c = QColor(col); c.setAlpha(34)
+        p.setPen(QPen(c, 1.0))
+        for ang in spokes:
+            p.drawLine(QPointF(cx + math.cos(ang) * rx * 0.12, cy + math.sin(ang) * ry * 0.12),
+                       QPointF(cx + math.cos(ang) * rx, cy + math.sin(ang) * ry))
+        c = QColor(col); c.setAlpha(150)
+        p.setPen(QPen(c, 1.6)); p.drawEllipse(QPointF(cx, cy), rx * 0.98, ry * 0.98)       # the emitter's lip
+        p.restore()
+
+    def _sweep(self, p, g, tint):
+        """A thin bright line that rises through the projection every few seconds."""
+        if REDUCED:
+            return
+        f, strength = H.sweep(self.t)
+        y = g["top"] + (g["h"] - g["top"] - g["bot"]) * f
+        col = rgb(tint); col.setAlpha(int(46 * strength))
+        grad = QLinearGradient(0, y - 14, 0, y + 14)
+        z = QColor(col); z.setAlpha(0)
+        grad.setColorAt(0.0, z); grad.setColorAt(0.5, col); grad.setColorAt(1.0, z)
+        p.setCompositionMode(QPainter.CompositionMode_Plus)
+        p.fillRect(QRectF(0, y - 14, g["w"], 28), grad)
 
     def _overlay(self, w, h):
         """Faint horizontal scanlines and a dark vignette: the holographic-display finish. Built once per size."""

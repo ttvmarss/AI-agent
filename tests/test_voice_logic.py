@@ -80,7 +80,10 @@ class VAD(unittest.TestCase):
             self.assertEqual(self.run_seg(pcm, chunk), whole, chunk)
 
     def test_very_long_speech_is_cut_at_the_maximum(self):
-        out = self.run_seg(quiet(0.5) + tone(20.0) + quiet(1.5), max_ms=5000)
+        import random as _r
+        rr, n = _r.Random(3), 20 * RATE            # speech-like: the level rises and falls with syllables (a steady tone would be "noise")
+        pcm = array.array("h", (int(9000 * math.sin(2 * math.pi * 220 * i / RATE) * (0.25 + 0.75 * abs(math.sin(i / RATE * 11)))) for i in range(n))).tobytes()
+        out = self.run_seg(quiet(0.5) + pcm + quiet(1.5), max_ms=5000)
         self.assertGreaterEqual(len(out), 3); self.assertTrue(all(len(u) / 2 / RATE <= 5.2 for u in out))
 
     def test_level_and_state_are_exposed(self):
@@ -200,6 +203,17 @@ class FakeActions:
     def status_text(self): return "STATUS"
 
 
+class Hallucination(unittest.TestCase):
+    def test_a_recogniser_stuck_in_a_loop_is_not_a_command(self):
+        from praxis.voice.stt import looping
+        self.assertTrue(looping("Praxis, deny. " * 40))                 # found in noise: one phrase repeated 100 times
+        self.assertTrue(looping("Praxis, run the tests. Praxis, run the tests. Praxis, run the tests."))
+        self.assertTrue(looping("the the the the the the the the the the"))
+        for ok in ("Praxis, create a file called hello.txt that says hello world.", "Praxis, status.", "yes yes",
+                   "Praxis, fix the failing tests in calc.py and then run them again. Then summarise what changed."):
+            self.assertFalse(looping(ok), ok)
+
+
 class Rules(unittest.TestCase):
     def setUp(self):
         self.a, self.said, self.t = FakeActions(), [], [100.0]
@@ -272,7 +286,8 @@ class Rules(unittest.TestCase):
         self.adv(1); self.c.tick()
         self.assertIn("python build.py", self.said[-1][0]); self.assertTrue(self.said[-1][1])
         self.said.clear(); self.c.tick(); self.assertEqual(self.said, [])                       # asked once, not every tick
-        self.assertEqual(self.c.hear("approve"), "approve"); self.assertEqual(self.a.calls, [("respond", "r1", True)])
+        self.assertEqual(self.c.hear("approve"), "ignored: an approval must start with my name"); self.assertEqual(self.a.calls, [])
+        self.assertEqual(self.c.hear("Praxis, approve"), "approve"); self.assertEqual(self.a.calls, [("respond", "r1", True)])
 
     def test_deny_and_ambiguous_negatives_deny(self):
         for words in ("deny", "no", "I don't approve", "do not approve that", "stop", "cancel"):
@@ -284,7 +299,8 @@ class Rules(unittest.TestCase):
         self.assertEqual(self.c.hear("yes"), "asked again"); self.assertEqual(self.a.calls, [])
         self.assertIn("risky", self.said[-1][0])
         self.a.pending_list = [self.req("r2", cls=3, tool="agent.delegate", agent="claude", task="x")]; self.c.last_text = ""
-        self.assertEqual(self.c.hear("yes"), "approve"); self.assertEqual(self.a.calls, [("respond", "r2", True)])
+        self.assertEqual(self.c.hear("yes"), "ignored: an approval must start with my name"); self.assertEqual(self.a.calls, [])
+        self.assertEqual(self.c.hear("Praxis, yes"), "approve"); self.assertEqual(self.a.calls, [("respond", "r2", True)])
 
     def test_the_ways_the_real_recogniser_mishears_approve_still_work_and_stay_gated(self):
         # found in the live test: Whisper heard "approve" as "prove" and "Prue" until it was given the vocabulary

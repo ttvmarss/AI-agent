@@ -145,6 +145,24 @@ class Approvals(unittest.TestCase):
         c, ws, st = mk([GOOD]); c.respond("nope", True)   # must not raise
 
 
+class StopBeforeItStarts(unittest.TestCase):
+    def test_stop_pressed_the_instant_a_goal_is_submitted_is_not_lost(self):
+        # Found by the break-it campaign: Stop (Esc, or "Praxis, stop") before the executive existed was silently ignored, and the goal
+        # then ran to completion unstoppable.
+        for delay in (0.0, 0.15, 0.4):
+            c, ws, st = mk([GOOD])
+            orig = c._make_executive
+            def slow(log, dc, nc, orig=orig, delay=delay):
+                time.sleep(delay); return orig(log, dc, nc)
+            c._make_executive = slow
+            self.assertTrue(c.submit("make a.txt"))
+            c.stop()
+            self.assertTrue(wait(lambda: c.state == "idle", 10))
+            self.assertFalse(os.path.exists(os.path.join(ws, "a.txt")), f"the goal ran although Stop was pressed (delay {delay})")
+            reports = [e for e in c.poll().events if e.type == "goal.report"]
+            self.assertTrue(reports and reports[-1].payload["status"] == "CANCELLED", [r.payload.get("status") for r in reports])
+
+
 class Recovery(unittest.TestCase):
     def test_unfinished_goal_is_offered_and_resumable(self):
         ws, home = tempfile.mkdtemp(), tempfile.mkdtemp()

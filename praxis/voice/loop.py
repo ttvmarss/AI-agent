@@ -8,6 +8,8 @@ import time
 from . import audio
 from .conductor import Conductor
 
+MAX_SPOKEN = 420          # characters of one spoken sentence
+MAX_QUEUED = 5           # sentences waiting to be spoken
 TAIL_S = 0.55          # stay deaf this long after speech ends (room echo)
 
 
@@ -21,7 +23,8 @@ class VoiceLoop:
         self.muted, self.speaking, self.thinking, self.deaf_until = False, False, False, 0.0
         self.level, self.speak_level, self._env, self._env_t0 = 0.0, 0.0, [], 0.0
         self.transcripts = []                 # (time, text, what it did): the log you read when something is odd
-        self.last_error = ""
+        self.last_error, self.unspoken = "", ""
+        self.last_chunk, self.mic_ok, self._mic_retry = time.monotonic(), True, 0.0
         self._inq, self._sttq, self._ttsq = queue.Queue(), queue.Queue(maxsize=3), []
         self._ttscv = threading.Condition()
         self._stop_speaking, self._closing = threading.Event(), False
@@ -31,7 +34,7 @@ class VoiceLoop:
     def start(self):
         for name, fn in (("voice-listen", self._listen), ("voice-stt", self._stt), ("voice-tts", self._tts), ("voice-tick", self._ticker)):
             t = threading.Thread(target=fn, daemon=True, name=name); t.start(); self._threads.append(t)
-        self.mic.start(self._inq.put)
+        self.mic.start(self._on_chunk)
 
     def close(self):
         self._closing = True
@@ -39,6 +42,31 @@ class VoiceLoop:
         self.mic.stop()
         with self._ttscv:
             self._ttscv.notify_all()
+
+    def _on_chunk(self, chunk):
+        self.last_chunk = time.monotonic()
+        self._inq.put(chunk)
+
+    def _watch_mic(self):
+        """A real microphone delivers audio constantly. If it goes quiet (headset unplugged, driver reset) say so and keep
+        trying to bring it back, rather than sitting on 'listening' while deaf."""
+        if not self.mic.streams or self.muted:
+            return
+        now = time.monotonic()
+        if now - self.last_chunk < 3.0:
+            if not self.mic_ok:
+                self.mic_ok, self.last_error = True, ""
+            return
+        if self.mic_ok:
+            self.mic_ok = False
+            self.last_error = "the microphone stopped delivering audio"
+            self.log("mic-lost", self.last_error)
+        if now >= self._mic_retry:
+            self._mic_retry = now + 5.0
+            try:
+                self.mic.stop(); self.mic.start(self._on_chunk)
+            except Exception as e:
+                self.last_error = f"the microphone is unavailable: {type(e).__name__}: {e}"
 
     def set_muted(self, muted):
         self.muted = bool(muted)
@@ -49,6 +77,8 @@ class VoiceLoop:
     def state(self):
         if self.muted:
             return "muted"
+        if not self.mic_ok:
+            return "offline"
         if self.speaking:
             return "speaking"
         if self.thinking:
@@ -66,12 +96,16 @@ class VoiceLoop:
 
     # ---- speaking -----------------------------------------------------------------------------------------------------------
     def say(self, text, urgent=False):
-        if not self.speak_on or not text:
+        if not self.speak_on or not isinstance(text, str) or not text.strip():
             return
+        text = text.strip()
+        if len(text) > MAX_SPOKEN:                               # nobody wants a four-minute monologue; cut at a word
+            text = text[:MAX_SPOKEN].rsplit(" ", 1)[0] + "..."
         with self._ttscv:
             if urgent:
                 self._ttsq.clear()                               # a final report outranks queued commentary
             self._ttsq.append(text)
+            del self._ttsq[:-MAX_QUEUED]                         # a backlog is stale news: keep only the newest few
             self._ttscv.notify()
 
     def shut_up(self):
@@ -89,6 +123,7 @@ class VoiceLoop:
                 pcm, rate = self.voice.synth(text)
             except Exception as e:
                 self.last_error = f"speech synthesis failed: {type(e).__name__}: {e}"
+                self.unspoken = text                          # the screen shows what it could not say aloud
                 self.log("tts-error", self.last_error)
                 continue
             self._stop_speaking.clear()
@@ -99,6 +134,7 @@ class VoiceLoop:
                 self.speaker.play(pcm, rate, self._stop_speaking)
             except Exception as e:
                 self.last_error = f"playback failed: {type(e).__name__}: {e}"
+                self.unspoken = text
                 self.log("play-error", self.last_error)
             finally:
                 self.speaking, self._env = False, []
@@ -111,6 +147,10 @@ class VoiceLoop:
                 self.conductor.tick()
             except Exception as e:
                 self.last_error = f"voice tick failed: {type(e).__name__}: {e}"
+            try:
+                self._watch_mic()
+            except Exception as e:
+                self.last_error = f"microphone watchdog failed: {type(e).__name__}: {e}"
             time.sleep(0.25)
 
     # ---- listening ----------------------------------------------------------------------------------------------------------

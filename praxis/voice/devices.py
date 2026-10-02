@@ -8,6 +8,8 @@ from .audio import RATE, to_mono16k
 
 
 class Mic:
+    streams = False                        # True for a real device that must deliver audio continuously (a silent one is unplugged)
+
     def start(self, on_chunk):             # on_chunk(pcm16 mono 16 kHz bytes), called from the audio thread
         raise NotImplementedError
 
@@ -16,6 +18,7 @@ class Mic:
 
 
 class SdMic(Mic):
+    streams = True
     """The default input device. Asks for 16 kHz mono; if the driver insists on its own rate, converts."""
 
     def __init__(self, device=None):

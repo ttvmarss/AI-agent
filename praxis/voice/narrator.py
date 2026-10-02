@@ -15,9 +15,12 @@ def clean(text, limit=140):
 
 
 def for_event(etype, p):
-    """-> (sentence or None, urgent). Only milestones are spoken."""
+    """-> (sentence or None, urgent). Only milestones are spoken. Any payload shape is survivable."""
+    p = p if isinstance(p, dict) else {}
     if etype == "plan.accepted":
-        n = len(p.get("plan", {}).get("steps", []))
+        plan = p.get("plan")
+        steps = plan.get("steps") if isinstance(plan, dict) else None
+        n = len(steps) if isinstance(steps, (list, tuple)) else 0
         s = f"Plan ready: {n} step{'s' if n != 1 else ''}."
         if p.get("tainted"):
             s += " It came from file contents, so I'm limiting it to reversible actions."
@@ -30,7 +33,8 @@ def for_event(etype, p):
         return f"I blocked a step: {clean(p.get('reason'), 100)}.", False
     if etype == "goal.report":
         status, reason = p.get("status"), clean(p.get("reason"))
-        passed = sum(1 for e in p.get("evidence", []) if e.get("passed"))
+        ev = p.get("evidence")
+        passed = sum(1 for e in (ev if isinstance(ev, (list, tuple)) else []) if isinstance(e, dict) and e.get("passed"))
         if status == "VERIFIED":
             return (f"Done. {passed} check{'s' if passed != 1 else ''} passed." if passed else "Done."), True
         if status == "UNVERIFIED":
@@ -43,7 +47,7 @@ def for_event(etype, p):
 
 def approval_prompt(req):
     """The spoken version of the approval dialog: the exact action, then the exact words that will be accepted."""
-    a = req.args or {}
+    a = req.args if isinstance(req.args, dict) else {}
     if req.tool == "shell.run":
         what = f"run this command: {clean(a.get('cmd'), 100)}"
     elif req.tool == "agent.delegate":
@@ -53,7 +57,7 @@ def approval_prompt(req):
     else:
         what = f"use {req.tool}"
     risky = req.cls >= 4
-    ask = "Say approve to allow it, or deny." if risky else "Say yes to allow it, or deny."
+    ask = "Say Praxis, approve to allow it, or deny." if risky else "Say Praxis, yes to allow it, or deny."
     return f"I need your approval to {what}. {ask}"
 
 

@@ -1530,4 +1530,58 @@ noise, music and far-field speech are untested, and `base.en` will mishear some 
 trigger it); say "Praxis, stop" after it finishes, press Esc, or use headphones and keep answers short. Speakers close to the microphone
 can still defeat the 0.55 s deaf tail in a very reverberant room.
 
-*End of Revision Zero (with addenda 38 to 43). Failures get logged, not hidden.*
+## 44. Status addendum — a holographic finish, and the break-it campaign (2026-10-02)
+
+**Requirement (from the owner):** make it feel more holographic; then behave as Tony Stark would, trying to physically break it
+(many stress tests), and fix how it breaks.
+
+**44.1 Holographic finish** (`praxis/desktop/qt/hologram.py`, pure functions of time, plus `core.py`). The Loom now stands on a
+projector: a perspective grid with an emitter ring and a soft beam of light rising from it; the whole image has a faint brightness
+flicker (never below 88%), a ghost second image a pixel or two to the side, a bright line that sweeps up through it every 5.5 s and a
+rare, brief horizontal tear (about 0.14 s every 7 s). All decoration: no number on screen comes from it. `PRAXIS_REDUCE_MOTION=1`
+switches flicker, ghost, glitch and sweep off. Tested: bands and rarity of each effect, totality for any input, that the beam is really
+drawn (the same frame without the projector is darker), and that state colour still dominates.
+
+**44.2 The campaign.** Seeded randomised tests state an invariant for every input (`tests/test_stress.py`, `tests/test_stress_qt.py`;
+`PRAXIS_STRESS=N`, `PRAXIS_SEED=s`). The recorded run: 4 seeds of the voice-logic suite at N=60,000 (about 1.9 million parser,
+conversation and audio cases per seed, about 7.6 million in total: hostile Unicode, 4,000-word strings, control characters, random
+approvals, odd clocks, event payloads of every wrong shape, random and adversarial audio) and 2 seeds of the window suite at N=12,000
+(about 2,400 paints at sizes from 1x1 to 3840 wide with hostile numbers in every input, about 4,800 random views, about 6,000 random
+key presses, resizes, mute toggles and utterances, voices that fail every way). All green after the fixes below. **That is millions of
+cases, not billions; I will not claim a number I did not run.** Separately, recognition was measured on real Whisper with white noise
+added at several levels and at 4% to 100% volume.
+
+**44.3 What broke, and the fix (each has a regression test; mutants of the fixes were killed).**
+* **A segmentation fault** (hard crash, no traceback): a NaN/infinite time step or audio level reaching Qt geometry. Found by the fuzzer,
+  and earlier by the first hologram render (`QColor(tuple)` also crashes PySide instead of raising). Now every external number is passed
+  through `fin()` (finite and clamped), non-finite or negative time steps are ignored, a long stall advances at most 0.25 s, and the clock
+  wraps at 100,000 s so a session left on for weeks keeps its precision.
+* **A security hole:** with a risky approval pending, *anyone* saying "approve" (a television, a bystander) was enough, because answers
+  to a pending approval did not need the wake word. Approving now always needs "Praxis, approve" (or "Praxis, yes" for mild actions); denying,
+  stopping and muting stay possible without it (the safe direction).
+* **Constant loud noise (fan, music, machine) was chopped into fake sentences** and sent to the recogniser every 14 s. A segment that never
+  paused *and* has no syllable-like level variation is now learned as background and dropped; genuine long speech is still kept.
+* **Whisper falling into a loop** ("Praxis, deny." repeated 100 times, seen at 0 to 5 dB noise) was submitted as a goal. Loops are now
+  rejected.
+* **Odd event payloads crashed the narrator** (a `None` plan or evidence entry) and one bad event stopped the rest being spoken. The narrator
+  accepts any shape and each event is isolated.
+* **A 4,000-word sentence would have been spoken for minutes**, and a backlog of stale sentences would have played after the fact. A
+  spoken sentence is cut at 420 characters; at most the 5 newest are queued.
+* **An unplugged microphone left the screen saying "listening" while deaf.** The loop now notices 3 s of silence from a real device, shows
+  NO MICROPHONE, retries every 5 s and recovers by itself (muted stays muted). **A dead speaker** left the user with nothing: the words it
+  could not say are now shown on screen.
+* **Stop pressed right after submitting a goal was silently lost** (a race, about 1 in 14 runs under CPU load): until the executive was
+  built, `stop()` returned without doing anything and the goal then ran unstoppable. It is now remembered and applied the moment the
+  executive exists (verified: the new test fails on the old code at all three delays tried).
+* **The screen froze while an approval dialog was open**: the modal dialog ran a nested loop inside the main timer's own slot, and Qt does
+  not re-enter a timer's slot, so voice state, captions and "Praxis, mute" all stopped until the dialog closed. The dialog now opens from
+  the next turn of the event loop and approvals queue (verified: the new test fails on the old code).
+* Also a harness lesson: modal dialogs run a nested event loop, so scripts must drive the window from a thread.
+
+**44.4 Measured limits.** On real Whisper `base.en` with a synthetic voice: all 7 commands recognised and parsed correctly with no noise
+and at 4% volume, and with white noise down to 10 dB SNR (one miss at 10 dB and 4% volume); at 5 dB 5 to 6 of 7; at 0 dB 5 to 6 of 7.
+Misses fail safe (an unrecognised "approve" never approves; "mute" sometimes became "deny" or a goal, which the confirmation echo shows).
+A real room, real accents and a real microphone remain untested here. The break-it campaign finds *software* faults; it cannot replace a
+person using the product for a week.
+
+*End of Revision Zero (with addenda 38 to 44). Failures get logged, not hidden.*
