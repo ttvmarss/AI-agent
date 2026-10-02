@@ -1,0 +1,11 @@
+{
+  "base_checkpoint": "checkpoints/trail-micro/checkpoint_003000",
+  "base_step": 3000,
+  "best_val": null,
+  "config_digest": "7ac763d6a637c829",
+  "schedule": {},
+  "seed": 1337,
+  "stage": "instruct",
+  "step": 300,
+  "tokens": 0
+}

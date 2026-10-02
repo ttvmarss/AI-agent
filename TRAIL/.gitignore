@@ -2,6 +2,8 @@ __pycache__/
 *.pyc
 checkpoints/*
 !checkpoints/.gitkeep
+!checkpoints/TRAIL-V1-BASE/
+!checkpoints/TRAIL-V1-INSTRUCT/
 datasets/processed/
 datasets/raw/
 runs/

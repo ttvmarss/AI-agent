@@ -85,6 +85,18 @@ def run_suite(checkpoint, config_path=None, record=True, n_val=48, gen_tokens=12
     for name, items in (("reasoning", probes.REASONING), ("coding", probes.CODING)):
         acc, chance = metrics.multiple_choice(eng, items)
         res[name] = {"accuracy": round(acc, 3), "chance": round(chance, 3), "items": len(items), "note": "likelihood-scored multiple choice; near chance means no measurable skill yet"}
+    if eng.stage == "instruct":
+        from ..inference.chat import _stream_chat
+        from ..tokenizer.template import IDENTITY_SYSTEM, encode_turns
+        from ..training.instruct_data import EVAL_IDENTITY
+        rows, ok = [], 0
+        for q in EVAL_IDENTITY:                                   # held-out paraphrases: never trained on
+            ids = encode_turns(eng.tok, [{"role": "user", "content": q}], IDENTITY_SYSTEM)
+            a = "".join(_stream_chat(eng, ids, 0, 0, 1.0, 80, None))
+            good = "trail" in a.lower() and not any(b in a.lower() for b in ("chatgpt", "claude", "openai", "anthropic", "llama", "gemini"))
+            ok += good
+            rows.append({"prompt": q, "answer": a, "mentions_trail_and_no_other_vendor": good})
+        res["identity_heldout"] = {"pass": ok, "of": len(rows), "rows": rows}
     if record:
         hist = os.path.join(project_root(), "evaluations", "history.jsonl")
         os.makedirs(os.path.dirname(hist), exist_ok=True)
