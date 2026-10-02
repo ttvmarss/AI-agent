@@ -26,7 +26,7 @@ It checks everything below, offers to install Python, creates a **PRAXIS** short
 | **Claude** subscription | PowerShell: `irm https://claude.ai/install.ps1 \| iex`  (or `winget install Anthropic.ClaudeCode`) | run `claude`, follow the browser prompt |
 | **ChatGPT / Codex** | PowerShell: `powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 \| iex"` *(command from third-party guides; the official page is <https://learn.chatgpt.com/docs/cli>, check it)* or `npm install -g @openai/codex` | `codex login` → "Sign in with ChatGPT" |
 | **Factory Droid** | follow <https://docs.factory.com/cli/getting-started/quickstart> *(I could not read the exact Windows command from their docs)* | set the `FACTORY_API_KEY` environment variable |
-| **Devin** | nothing to install | set `DEVIN_API_KEY` and `DEVIN_ORG_ID`, then `enabled = true` under `[providers.devin]` in `praxis.toml`. Every use asks your approval (it spends ACUs) |
+| **Devin** | nothing to install | set `DEVIN_API_KEY` and `DEVIN_ORG_ID`, then `enabled = true` under `[providers.devin]` in your user config (below). Every use asks your approval (it spends ACUs) |
 | **Ollama** | <https://ollama.com/download/windows> (needs NVIDIA driver **551.61+**) | none; runs in the tray at `localhost:11434` |
 | **Docker Desktop** *(optional but recommended)* | <https://www.docker.com/products/docker-desktop/> | lets PRAXIS run code in a **proven** sandbox. Without it, anything that executes code asks your approval each time (safe, just more clicks). Run `docker pull python:3.11-slim` once |
 
@@ -57,6 +57,10 @@ python -m praxis bench --all-ollama      (measures real quality AND speed; the r
 
 Recommended Ollama settings for a small-VRAM card (from Ollama's FAQ). Set as Windows user environment variables, then restart Ollama:
 `OLLAMA_FLASH_ATTENTION=1`, `OLLAMA_KV_CACHE_TYPE=q8_0`, `OLLAMA_MAX_LOADED_MODELS=1`. Models are stored in `%HOMEPATH%\.ollama`; set `OLLAMA_MODELS` to move them to a bigger drive.
+
+### Your config file (optional)
+
+Copy `praxis.toml.example` to **`%USERPROFILE%\.praxis\praxis.toml`**. This is the only place provider hosts, sandbox, privacy and limits can be set. A `praxis.toml` inside a project folder is deliberately **untrusted** (a downloaded repo could ship one that points your "local" model at someone else's server), so it may only set `[hardware]`, `[role_tiers]` and `[roles]`.
 
 ## 5. First launch
 
@@ -96,6 +100,6 @@ Double-click the **PRAXIS** shortcut. The window opens on **Mission**:
 | Window will not open | `python -m praxis.desktop` in a terminal shows the error. "Needs Tk" → reinstall Python from python.org |
 | A provider shows `SKIPPED` | `python -m praxis doctor` prints the reason (not installed / not logged in / Ollama not running) |
 | Everything asks for approval | No proven sandbox: install Docker Desktop and run `docker pull python:3.11-slim`, then System → *Re-run sandbox self-attack* |
-| Local model is slow | System/Models show measured tok/s; lower `num_ctx` in `praxis.toml`, set the Ollama variables above, or pick the 8B helper |
-| Wrong GPU numbers | set `[hardware] vram_gb / ram_gb / ram_bw_gbps` in `praxis.toml` (see `praxis.toml.example`) |
+| Local model is slow | System/Models show measured tok/s; lower `num_ctx` in your user `praxis.toml`, set the Ollama variables above, or pick the 8B helper |
+| Wrong GPU numbers | set `[hardware] vram_gb / ram_gb / ram_bw_gbps` in `%USERPROFILE%\.praxis\praxis.toml` (see `praxis.toml.example`) |
 | Stuck on STOPPING | it is waiting for a model call to die; if a CLI ignores the kill, close the window (it will ask) |

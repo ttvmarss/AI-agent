@@ -1,4 +1,6 @@
-# Copy to <workspace>/praxis.toml or ~/.config/praxis/praxis.toml. Every key is optional.
+# Copy to  ~/.praxis/praxis.toml  (Windows: %USERPROFILE%\.praxis\praxis.toml)  or  ~/.config/praxis/praxis.toml. Every key is optional.
+# SECURITY: a praxis.toml inside a project folder is UNTRUSTED (it could ship with a downloaded repo) and may only set
+# [hardware], [role_tiers] and [roles]. Provider hosts, sandbox, privacy and limits are read only from your user config.
 
 [providers.claude]          # your Claude subscription, via the official `claude` CLI login
 enabled = true              # models come from [models.claude] below (one instance per tier)

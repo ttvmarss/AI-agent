@@ -39,7 +39,8 @@ pip install -e .                    # optional: installs `praxis` and `praxis-de
 python -m unittest discover -s tests -t .        # 240 tests (UI tests need tkinter + a display; they skip otherwise)
 ```
 
-Config: copy [`praxis.toml.example`](praxis.toml.example).
+Config: copy [`praxis.toml.example`](praxis.toml.example) to `~/.praxis/praxis.toml`. A `praxis.toml` inside a project folder is untrusted and
+may only set hardware and role preferences (it could ship with a downloaded repo).
 
 ## Evidence, and what is not proven
 

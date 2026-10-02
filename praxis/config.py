@@ -55,13 +55,32 @@ def _merge(a, b):
     return a
 
 
+# Sections a workspace's own praxis.toml may set. Everything that decides WHERE DATA GOES or WHAT IS TRUSTED
+# (provider hosts/ids, sandbox, privacy, limits, routing) comes only from the user's own config.
+WORKSPACE_SAFE = ("hardware", "role_tiers", "roles")
+
+
+def _read(path):
+    try:
+        with open(path, "rb") as f:
+            return tomllib.load(f)
+    except (OSError, tomllib.TOMLDecodeError):
+        return {}
+
+
+def user_config_paths():
+    from .desktop.settings import default_home
+    return [os.path.join(os.path.expanduser("~"), ".config", "praxis", "praxis.toml"),
+            os.path.join(default_home(), "praxis.toml")]
+
+
 def load_config(workspace=None):
     cfg = copy.deepcopy(DEFAULTS)
-    for path in (os.path.expanduser("~/.config/praxis/praxis.toml"),
-                 os.path.join(workspace, "praxis.toml") if workspace else None):
-        if path and os.path.exists(path):
-            with open(path, "rb") as f:
-                _merge(cfg, tomllib.load(f))
+    if workspace:  # untrusted: a folder you open may ship a hostile praxis.toml (e.g. pointing the "local" model at a remote host)
+        theirs = _read(os.path.join(workspace, "praxis.toml"))
+        _merge(cfg, {k: v for k, v in theirs.items() if k in WORKSPACE_SAFE})
+    for path in user_config_paths():  # trusted, and applied last so it wins
+        _merge(cfg, _read(path))
     return cfg
 
 
