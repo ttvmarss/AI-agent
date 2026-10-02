@@ -63,7 +63,8 @@ DEFAULTS = {
     "sandbox": {"backend": "auto"},   # auto | bwrap | unshare | docker | none
     # Hands-free voice (pip install faster-whisper piper-tts sounddevice). User config only: a project folder cannot touch it.
     "voice": {"enabled": True, "wake_word": "praxis", "stt_model": "base.en", "voice": "jarvis-high", "speak": True,
-              "attentive_s": 15.0, "approval_s": 60.0, "input_device": "", "chat": True},
+              "attentive_s": 15.0, "approval_s": 60.0, "input_device": "", "chat": True,
+              "wake_required": False},        # False: just talk; True: it acts only on sentences that start with its name
 
 }
 

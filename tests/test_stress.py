@@ -83,7 +83,8 @@ class Parsing(unittest.TestCase):
 class ConductorChaos(unittest.TestCase):
     def run_one(self, r):
         a, said, t = Rec(), [], [1000.0]
-        c = Conductor(a, lambda text, urgent=False: said.append(text), clock=lambda: t[0])
+        opn = r.random() < 0.5                                  # half the conversations run in open mode (no name needed)
+        c = Conductor(a, lambda text, urgent=False: said.append(text), clock=lambda: t[0], wake_required=not opn)
         heard_wake_for = {}
         for step in range(r.randint(5, 60)):
             t[0] += r.choice([0, 0.01, 0.5, 1, 3, 9, 11, 30, 61, 500])
@@ -110,11 +111,12 @@ class ConductorChaos(unittest.TestCase):
                 new = a.calls[before:]
                 for call in new:
                     if call[0] == "submit":                  # a goal only ever starts from the wake word or the short follow-up window
-                        self.assertTrue(heard or attentive, repr(text))
+                        self.assertTrue(heard or attentive or opn, repr(text))
                         self.assertFalse(pend, "a goal started while an approval was pending")
                     if call[0] == "respond" and call[2]:     # approvals: risky ones only on the literal word; everything else on yes/approve
                         req = next(p for p in pend if p.id == call[1])
                         n = wake.normalize(text)
+                        self.assertTrue(heard, f"approved without its name: {text!r}")           # in every mode
                         if req.cls >= 4:
                             self.assertRegex(n, r"(approve|prove|prue)", repr(text))
                         else:

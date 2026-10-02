@@ -56,7 +56,7 @@ SEG = {"idle": ((110, 140, 190), 60, 1.3), "pending": ((120, 150, 205), 95, 1.5)
 REDUCED = bool(os.environ.get("PRAXIS_REDUCE_MOTION"))
 RING_NAMES = ("PLAN", "ACT", "VERIFY")
 VOICE_BARS = 96
-VOICE_TAG = {"listening": "LISTENING  \u00b7  say \u201cpraxis\u201d", "hearing": "HEARING", "thinking": "THINKING",
+VOICE_TAG = {"listening": "LISTENING", "hearing": "HEARING", "thinking": "THINKING",
              "speaking": "SPEAKING", "muted": "MIC OFF  \u00b7  F4", "offline": "NO MICROPHONE"}
 VOICE_COLOR = {"listening": "accent", "hearing": "accent", "thinking": "violet", "speaking": "ok", "muted": "warn", "offline": "bad"}
 RING_HALF, RING_HEIGHT = P.ring_extent()

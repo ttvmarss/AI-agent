@@ -283,6 +283,60 @@ class Conversation(unittest.TestCase):
         self.assertEqual(c.hear("Praxis, how are you today my friend"), "goal")
 
 
+class OpenMode(unittest.TestCase):
+    """Reported by the owner: having to say its name before every sentence is tiresome. With wake_required=False it just listens."""
+    def setUp(self):
+        from praxis.voice.chat import Chat
+        self.a, self.said, self.t = FakeActions(), [], [100.0]
+        self.c = Conductor(self.a, lambda text, urgent=False: self.said.append(text), clock=lambda: self.t[0], wake_required=False,
+                           chat=Chat(lambda m: "Fine."))
+
+    def wait(self, n=1):
+        import time as _t
+        end = _t.time() + 3
+        while len(self.said) < n and _t.time() < end: _t.sleep(0.01)
+
+    def test_it_answers_without_its_name(self):
+        self.assertEqual(self.c.hear("how are you doing today"), "chat"); self.wait(); self.assertIn("nominal", self.said[0])
+        self.t[0] += 60
+        self.assertEqual(self.c.hear("what time is it"), "chat")
+        self.t[0] += 60
+        self.assertEqual(self.c.hear("create a file called hello.txt that says hi"), "goal"); self.assertEqual(self.a.calls[0][0], "submit")
+
+    def test_it_never_answers_its_own_voice_coming_back_through_the_room(self):
+        self.c.say("Done. 2 checks passed.")
+        self.t[0] += 3
+        for echo in ("Done. 2 checks passed.", "done two checks passed", "Done, 2 checks passed"):
+            self.assertEqual(self.c.hear(echo), "ignored: my own voice", echo); self.t[0] += 5
+        self.assertEqual(self.a.calls, [])
+        self.t[0] += 60                                                   # long afterwards the same words are fair game again
+        self.assertNotEqual(self.c.hear("Done. 2 checks passed."), "ignored: my own voice")
+
+    def test_other_peoples_long_conversations_and_noise_are_ignored(self):
+        talk = "so then he said that we should probably go ahead and " + "talk about the quarterly numbers " * 6
+        self.assertEqual(self.c.hear(talk), "ignored: not addressed to me")
+        for t in ("yes", "okay", "thank you", "you", "bye bye", "yeah", "well"):
+            self.t[0] += 10; self.assertTrue(self.c.hear(t).startswith("ignored"), t)
+        self.assertEqual(self.a.calls, [])
+
+    def test_a_stray_yes_or_approve_is_ignored_silently_not_answered_every_time_the_tv_says_it(self):
+        self.said.clear()
+        for t in ("approve", "yes please", "deny"):
+            self.t[0] += 10; self.assertTrue(self.c.hear(t).startswith("ignored"), t)
+        self.assertEqual(self.said, [])
+
+    def test_approvals_still_need_its_name_even_in_open_mode(self):
+        self.a.pending_list = [types.SimpleNamespace(id="r1", cls=4, tool="shell.run", args={"cmd": "x"})]
+        self.assertTrue(self.c.hear("approve").startswith("ignored")); self.assertEqual(self.a.calls, [])
+        self.assertEqual(self.c.hear("praxis approve"), "approve"); self.assertEqual(self.a.calls, [("respond", "r1", True)])
+
+    def test_stop_and_mute_work_without_the_name(self):
+        self.a._state = "working"
+        self.assertEqual(self.c.hear("stop"), "stop"); self.assertIn(("stop",), self.a.calls)
+        self.a._state = "idle"; self.t[0] += 10
+        self.assertEqual(self.c.hear("mute"), "mute")
+
+
 class Hallucination(unittest.TestCase):
     def test_a_recogniser_stuck_in_a_loop_is_not_a_command(self):
         from praxis.voice.stt import looping

@@ -16,12 +16,13 @@ TAIL_S = 0.55          # stay deaf this long after speech ends (room echo)
 
 class VoiceLoop:
     def __init__(self, actions, recognizer, mic, speaker, voice, wake_word="praxis", speak=True, attentive_s=15.0,
-                 approval_s=60.0, segmenter=None, log=None, chat=True):
+                 approval_s=60.0, segmenter=None, log=None, chat=True, wake_required=True):
         self.recognizer, self.mic, self.speaker, self.voice, self.speak_on = recognizer, mic, speaker, voice, speak
         self.log = log or (lambda *_: None)
         self.seg = segmenter or audio.Segmenter()
         brain = Chat(actions.chat) if chat and getattr(actions, "chat", None) else None
-        self.conductor = Conductor(actions, self.say, wake_word=wake_word, attentive_s=attentive_s, approval_s=approval_s, log=self.log, chat=brain)
+        self.conductor = Conductor(actions, self.say, wake_word=wake_word, attentive_s=attentive_s, approval_s=approval_s, log=self.log, chat=brain,
+                                   wake_required=wake_required)
         self.muted, self.speaking, self.thinking, self.deaf_until = False, False, False, 0.0
         self.level, self.speak_level, self._env, self._env_t0 = 0.0, 0.0, [], 0.0
         self.transcripts = []                 # (time, text, what it did): the log you read when something is odd

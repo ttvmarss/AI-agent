@@ -7,18 +7,25 @@ Rules that hold whatever the recogniser hears:
   * while an approval is pending nothing else can become a goal; while a goal runs a new one is refused;
   * it never acts on text it already acted on in the last few seconds (an echo or a repeat).
 """
+import difflib
 import threading
 import time
 
 from . import narrator, wake, chat as chat_mod
 
-PHANTOM = {"thank you", "thanks", "thanks for watching", "you", "bye", "okay", "ok", "hmm", "uh", "um", "the", "so", "yeah"}
+PHANTOM = {"thank you", "thanks", "thanks for watching", "you", "bye", "okay", "ok", "hmm", "uh", "um", "the", "so", "yeah",
+           "bye bye", "see you next time", "see you", "please subscribe", "thank you for watching", "i'm sorry", "sorry", "mm", "mhm",
+           "uh huh", "oh", "ah", "huh", "what", "right", "well", "and", "but", "i"}
+MAX_OPEN_WORDS = 25            # without its name, longer speech is someone else's conversation, a podcast or a television
 PROMPT_DELAY = 0.8
 
 
 class Conductor:
-    def __init__(self, actions, say, clock=time.monotonic, wake_word="praxis", attentive_s=15.0, approval_s=60.0, log=None, chat=None):
-        self.a, self.say, self.clock = actions, say, clock
+    def __init__(self, actions, say, clock=time.monotonic, wake_word="praxis", attentive_s=15.0, approval_s=60.0, log=None, chat=None,
+                 wake_required=True):
+        self.a, self.clock = actions, clock
+        self._say_raw, self.recent = say, []         # what it said lately: the echo filter compares what it hears against this
+        self.wake_required = wake_required          # False: it answers whatever it hears (still never approving without its name)
         self.chat, self.chat_lock, self.chatting = chat, threading.Lock(), 0
         self.wake_word, self.attentive_s, self.approval_s = wake_word, attentive_s, approval_s
         self.log = log or (lambda *_: None)
@@ -29,6 +36,23 @@ class Conductor:
         self.seen = {}                  # approval id -> first seen (the prompt waits PROMPT_DELAY so earlier events are said first)
         self.spoken_reports = set()
         self.last_unknown_at = -99.0
+
+    def say(self, text, urgent=False):
+        self.recent = ([(self.clock(), wake.normalize(text))] + self.recent)[:8]
+        return self._say_raw(text, urgent)
+
+    def _is_my_own_voice(self, norm, now):
+        """Room echo that got past the deaf tail: the transcript is (nearly) something it just said."""
+        words = set(norm.split())
+        for t, said in self.recent:
+            if now - t > 45 or not said:
+                continue
+            if difflib.SequenceMatcher(None, norm, said).ratio() >= 0.72:
+                return True
+            sw = set(said.split())
+            if len(words) >= 3 and len(words & sw) / len(words) >= 0.85:
+                return True
+        return False
 
     # ---- what was heard --------------------------------------------------------------------------------------------
     def hear(self, text):
@@ -50,7 +74,13 @@ class Conductor:
             busy = self.a.state() in ("working", "stopping")
             attentive = now < self.attentive_until
             safe_stop = busy and wake.STOP.match(norm) is not None
-            if not (heard_wake or approving or attentive or safe_stop):
+            open_mode = not self.wake_required
+            if open_mode and not heard_wake:
+                if self._is_my_own_voice(norm, now):
+                    return "ignored: my own voice"
+                if len(norm.split()) > MAX_OPEN_WORDS:
+                    return "ignored: not addressed to me"
+            if not (heard_wake or approving or attentive or safe_stop or open_mode):
                 return "ignored: no wake word"
             self.last_text, self.last_at = norm, now
             risky = bool(pending) and pending[0].cls >= 4
@@ -86,6 +116,8 @@ class Conductor:
                 self.last_unknown_at = now
             return "waiting for answer"
         if k == "stray_answer":
+            if not heard_wake:
+                return "ignored: not a question I asked"
             self.say("Nothing is waiting for your approval.")
             return "nothing pending"
         if k == "mute":

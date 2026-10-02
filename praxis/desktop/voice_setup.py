@@ -79,7 +79,8 @@ def build_voice(controller, vcfg, progress=lambda text, frac=None: None, on_mute
     try:
         loop = VoiceLoop(ControllerActions(controller, on_mute), recognizer, mic, speaker, voice,
                          wake_word=vcfg.get("wake_word", "praxis"), speak=bool(voice) and vcfg.get("speak", True),
-                         attentive_s=float(vcfg.get("attentive_s", 15.0)), approval_s=float(vcfg.get("approval_s", 60.0)))
+                         attentive_s=float(vcfg.get("attentive_s", 15.0)), approval_s=float(vcfg.get("approval_s", 60.0)),
+                         wake_required=bool(vcfg.get("wake_required", False)))
         loop.engine, loop.voice_note = (voice.name if voice else "silent"), note
         log_line(f"voice engine: {loop.engine}" + (f"  ({note})" if note else ""))
         loop.start()

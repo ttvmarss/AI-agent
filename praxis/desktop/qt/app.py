@@ -161,7 +161,7 @@ class MainWindow(QMainWindow):
                     self.voice_progress = f"Voice: {loop.voice_note}"       # never leave a poor voice a mystery
                 from ...voice.chat import _greeting
                 import datetime
-                loop.say(f"{_greeting(datetime.datetime.now())} I'm listening. Say my name, and ask me anything.")
+                loop.say(f"{_greeting(datetime.datetime.now())} I'm listening. Just talk to me.")
             except VoiceUnavailable as e:
                 self.voice_error = str(e)
             except Exception as e:
