@@ -74,7 +74,7 @@ class Reactor(unittest.TestCase):
         c.reactor.resize(n)                    # fewer sparks keep the tests quick; the logic is identical
         c.resize(w, h); c.set_nodes(nodes); c.show()
         self.addCleanup(lambda: dispose(c))
-        step(c, 3.0)                           # past the power-up
+        step(c, 4.2)                           # past the power-up and the boot sequence
         return c
 
     def core_box(self, c):
@@ -125,7 +125,7 @@ class Reactor(unittest.TestCase):
         self.assertGreater(hue(ok), hue(idle) + 30, f"verified is gold, warmer than idle: {ok} vs {idle}")
         self.assertGreater(hue(wait), hue(idle) + 30, f"needs-you is orange, warmer than idle: {wait}")
         self.assertTrue(bad[0] > bad[1] * 1.2 and bad[0] > bad[2] * 1.2, f"failed is red: {bad}")
-        self.assertGreater(wait[1], bad[1] * 1.2, f"orange has more green than red does: {wait} vs {bad}")
+        self.assertGreater(wait[1] / wait[0], bad[1] / bad[0] + 0.08, f"orange has more green in it than red does: {wait} vs {bad}")
 
     def test_the_reactor_is_the_brightest_thing_in_the_frame_with_the_core_its_brightest_point(self):
         c = self.make()
@@ -154,7 +154,7 @@ class Reactor(unittest.TestCase):
                     continue
                 break
         self.assertGreater(gold, 50, "the housing has a gold bevel")
-        for name in ("_projector", "_sweep"):
+        for name in ("_projector", "_glitch", "_ghost"):
             self.assertFalse(hasattr(c, name), f"{name}: the scan-line hologram effects are gone")
 
     # ---- the three rings show real data ------------------------------------------------------------------------------
@@ -420,16 +420,132 @@ class Reactor(unittest.TestCase):
         c.resize(800, 500); c.set_nodes([]); c.set_active("nobody/x"); c.set_footer(""); c.set_caption("")
         c.set_pipeline("ready", ["verified"] * 40, [True] * 40, sealed=True); render(c)                # 40 arcs on a ring: still fine
 
-    def test_a_node_shows_its_name_only_when_it_matters_or_you_point_at_it(self):
-        c = self.make()
+    def test_every_brain_is_named_on_screen_and_brighter_when_it_matters_or_you_point_at_it(self):
+        nodes = [node("droid", 2), node("devin", 2), node("ollama", 0, "local")]
+        c = self.make(nodes=nodes)
         render(c)
-        g = c._geo(); pt = g["pos"][0][0]                                        # ollama: nothing special about it
-        area = (pt.x() - 150, pt.y() - 20, pt.x() - 20, pt.y() + 4)
-        quiet = count(render(c), area, lambda r, g_, b: r + g_ + b > 330, stride=1)
+        g = c._geo()
+        def area(i):
+            pt, side = g["pos"][i]
+            return (pt.x() - 160, pt.y() - 20, pt.x() - 20, pt.y() + 4) if side < 0 else (pt.x() + 20, pt.y() - 20, pt.x() + 160, pt.y() + 4)
+        for i in range(3):
+            self.assertGreater(count(render(c), area(i), lambda r, g_, b: r + g_ + b > 200), 15, nodes[i]["family"])        # named, always
+        i = 2; pt = g["pos"][i][0]
+        quiet = count(render(c), area(i), lambda r, g_, b: r + g_ + b > 450)
         ev = QMouseEvent(QEvent.MouseMove, QPointF(pt.x(), pt.y()), QPointF(0, 0), Qt.NoButton, Qt.NoButton, Qt.NoModifier)
         c.mouseMoveEvent(ev); self.assertEqual(c._hover, "ollama")
-        shown = count(render(c), area, lambda r, g_, b: r + g_ + b > 330, stride=1)
-        self.assertGreater(shown, quiet + 20)
+        shown = count(render(c), area(i), lambda r, g_, b: r + g_ + b > 450)
+        self.assertGreater(shown, quiet + 10)                                                                                 # pointing at it lights it up
+        self.assertEqual(core_mod.DISPLAY["droid"], "droid \u00b7 factory")                                                      # Factory's brain is named for what it is
+
+    # ---- the MCU-style layer: boot sequence, event feed, readout, energy ----------------------------------------------------
+    def test_the_hud_draws_itself_in_at_boot_and_is_complete_afterwards(self):
+        c = CoreView(); c.timer.stop(); c.reactor.resize(10); c.resize(1100, 620); c.show(); self.addCleanup(lambda: dispose(c))
+        c.set_pipeline("ready", ["verified"] * 3, [True]); c.set_state("working", 0.5, "RUNNING", "")
+        step(c, 0.3); early = render(c)
+        step(c, 4.0); late = render(c)
+        g = c._geo()
+        plan = lambda img: self.ring_px(img, c, 0, 180)
+        self.assertLess(luma(plan(early)), 40)                                       # the outer ring has not been drawn yet
+        self.assertGreater(luma(plan(late)), 90)                                      # and is there once the boot sequence is over
+        self.assertEqual(c.reactor.boot, 1.0)
+        c.set_state("idle", 0, "READY", ""); c.set_state("starting", 0, "STARTING", "")
+        self.assertEqual(c.reactor.boot, 0.0)                                         # a restart plays it again
+
+    def region(self, c, box, pred=lambda r, g, b: r + g + b > 300):
+        return count(render(c), box, pred)
+
+    def test_the_event_feed_shows_real_lines_collapses_repeats_and_keeps_six(self):
+        c = self.make(1280, 760, n=10)
+        box = (20, 760 - 150, 460, 760 - 40)
+        empty = self.region(c, box)
+        for i in range(9):
+            c.add_log(f"event number {i}", "ok" if i % 2 else "info")
+        self.assertEqual(len(c.log), 6); self.assertEqual(c.log[-1][1], "event number 8"); self.assertEqual(c.log[0][1], "event number 3")
+        c.add_log("event number 8", "ok"); self.assertEqual(len(c.log), 6)                # an immediate repeat is not added twice
+        c.add_log("", "info"); c.add_log(None, "info"); self.assertEqual(len(c.log), 6)
+        self.assertGreater(self.region(c, box), empty + 150)                              # the lines are on screen, bottom-left
+        small = self.make(900, 600, n=10); small.add_log("hidden when narrow", "ok")
+        self.assertEqual(self.region(small, (20, 450, 460, 560)), self.region(self.make(900, 600, n=10), (20, 450, 460, 560)))     # no panels on narrow windows
+
+    def test_the_goal_readout_shows_real_numbers_and_clears(self):
+        c = self.make(1280, 760, n=10)
+        box = (1280 - 260, 760 - 150, 1280 - 20, 760 - 40)
+        none = self.region(c, box)
+        c.set_stats({"elapsed": "00:12", "steps": "1/3", "checks": "1/1", "brain": "groq"})
+        self.assertGreater(self.region(c, box), none + 100)
+        c.set_stats({}); self.assertEqual(c.stats, {}); self.assertEqual(self.region(c, box), none)
+        c.set_stats(None); self.assertEqual(c.stats, {})
+
+    def test_an_energy_arc_is_really_drawn_between_the_core_and_the_coils(self):
+        c = self.make(n=10)
+        c.reactor.bolts = []
+        base = render(c)
+        g = c._geo()
+        c.reactor.bolts = [{"pts": RX.bolt_points(__import__("random").Random(2), 0.0, RX.CORE_R * 1.05, RX.COIL_OUT * 0.97), "age": 0.0, "life": 1.0}]
+        with_bolt = render(c)
+        x0 = g["cx"] + RX.CORE_R * 1.1 * g["R"]; x1 = g["cx"] + RX.COIL_OUT * 0.95 * g["R"]
+        box = (x0, g["cy"] - 14, x1, g["cy"] + 14)
+        self.assertGreater(self.region(c, box, lambda r, g_, b: r + g_ + b > 500) , -1)
+        diff = sum(abs(a.red() - b.red()) + abs(a.green() - b.green()) + abs(a.blue() - b.blue())
+                   for (x, y, *_), a, b in ((p, base.pixelColor(p[0], p[1]), with_bolt.pixelColor(p[0], p[1])) for p in pixels(base, *box)))
+        self.assertGreater(diff, 3000)
+
+    def test_events_light_the_armour_plates_in_a_travelling_ring_of_hexagons(self):
+        c = self.make(1280, 760, n=10)
+        c.ripples = []; c.reactor.shock = None; c.t = 4.0                     # between ambient pulses
+        quiet = render(c)
+        c.ripples = [(c.t - 0.7, "ok")]
+        lit = render(c)
+        g = c._geo()
+        u = 0.7 / 1.6; radius = g["R"] * (0.9 + 2.6 * RX.ease_out(u))
+        box = (g["cx"] + radius - 40, g["cy"] - 40, g["cx"] + radius + 40, g["cy"] + 40)
+        green = lambda r, g_, b: g_ > r + 10 and g_ > 40
+        self.assertGreater(self.region(c, box, green), 0)
+        diff = lambda a, b: sum(abs(a.pixelColor(x, y).green() - b.pixelColor(x, y).green()) for x, y, *_ in pixels(a, *box, stride=2))
+        self.assertGreater(diff(lit, quiet), 600)
+
+    def test_the_decorative_circles_turn_and_the_radar_sweeps_round(self):
+        c = self.make(n=10)
+        a = render(c); step(c, 0.8); b = render(c)
+        g = c._geo()
+        ring = lambda img: sum(img.pixelColor(int(g["cx"] + math.cos(t) * RX.DECOR_R[0] * g["R"]), int(g["cy"] + math.sin(t) * RX.DECOR_R[0] * g["R"])).blue() for t in [k * 0.05 for k in range(126)])
+        self.assertNotEqual(ring(a), ring(b))                                         # dashes moved and the sweep passed
+        self.assertNotEqual(c.reactor.sweep_rot, 0.0)
+
+    def test_the_radar_sweep_edge_is_where_the_engine_says_it_is_and_trails_behind(self):
+        c = self.make(n=5)
+        c.set_state("working", 0.5, "RUNNING", ""); step(c, 2.0)
+        g = c._geo()
+        def profile(img):                                   # brightness by angle (clockwise from the top) on the sweep band
+            out = {}
+            for deg in range(0, 360, 4):
+                tot = 0
+                for rr in (1.33, 1.345, 1.355):                       # inside the sweep band, clear of the dashed circle at 1.31 and the VERIFY ring
+                    x = g["cx"] + math.sin(math.radians(deg)) * rr * g["R"]; y = g["cy"] - math.cos(math.radians(deg)) * rr * g["R"]
+                    px = img.pixelColor(int(round(x)), int(round(y))); tot += px.red() + px.green() + px.blue()
+                out[deg] = tot
+            return out
+        img = render(c); prof = profile(img)
+        edge = math.degrees(c.reactor.sweep_rot) % 360
+        near = lambda d: min(abs((d - edge + 180) % 360 - 180), 999)
+        peak = max(prof, key=prof.get)
+        self.assertLess(near(peak), 14, (peak, edge))                                            # the bright edge is at the engine's angle
+        behind = sum(v for d, v in prof.items() if 12 < (edge - d) % 360 < 48) / 9.0               # the trail lies behind the edge (counter-clockwise)
+        ahead = sum(v for d, v in prof.items() if 12 < (d - edge) % 360 < 48) / 9.0
+        far = sum(v for d, v in prof.items() if 120 < (edge - d) % 360 < 240) / 30.0              # the quiet far side of the dial
+        self.assertGreater(behind, ahead * 1.12); self.assertGreater(behind, far * 1.12)
+
+    def test_the_wordmark_shimmer_and_motion_are_off_in_reduced_motion(self):
+        with mock.patch.object(core_mod, "REDUCED", True):
+            c = CoreView(); c.timer.stop(); c.reactor.resize(5); c.resize(1100, 620); c.show(); self.addCleanup(lambda: dispose(c))
+            step(c, 4.0); c.t = 0.5
+            a = render(c)
+            c.t = 0.9
+            b = render(c)
+            g = c._geo()
+            region = (g["cx"] - 80, 8, g["cx"] + 80, 30)
+            self.assertEqual(self.region(c, region), self.region(c, region))                        # deterministic, no shimmer
 
     # ---- interaction & performance ------------------------------------------------------------------------------------------
     def test_clicking_the_reactor_pokes_it_and_clicking_elsewhere_does_not(self):

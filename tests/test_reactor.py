@@ -191,6 +191,92 @@ class Motion(unittest.TestCase):
         self.assertEqual(a.embers, b.embers); self.assertNotEqual(a.embers, c.embers)
 
 
+class McuLayer(unittest.TestCase):
+    def test_an_energy_arc_runs_from_the_core_to_the_coils_and_is_jagged_but_bounded(self):
+        import random
+        pts = RX.bolt_points(random.Random(3), 0.7, RX.CORE_R, RX.COIL_OUT)
+        self.assertEqual(len(pts), 10)
+        self.assertAlmostEqual(math.hypot(*pts[0]), RX.CORE_R, places=6); self.assertAlmostEqual(math.hypot(*pts[-1]), RX.COIL_OUT, places=6)
+        for x, y in pts[1:-1]:
+            ang = math.atan2(y, x); rr = math.hypot(x, y)
+            off = rr * math.sin(ang - 0.7)                                       # sideways distance from the straight line
+            self.assertLessEqual(abs(off), 0.0351)
+        self.assertGreater(max(abs(math.hypot(x, y) * math.sin(math.atan2(y, x) - 0.7)) for x, y in pts[1:-1]), 0.002)     # it really is jagged
+        self.assertEqual(RX.bolt_points(random.Random(3), 0.7, 0.2, 0.8), RX.bolt_points(random.Random(3), 0.7, 0.2, 0.8))
+        self.assertEqual(len(RX.bolt_points(random.Random(1), 0, 0.2, 0.8, segs=3)), 4)
+
+    def test_events_make_the_core_crackle_up_to_the_cap_and_the_arcs_die_quickly(self):
+        r = RX.Reactor(); r.dyn.set_mode("idle"); run(r, 1.0); r.bolts = []
+        r.pulse(1.0); self.assertEqual(len(r.bolts), 2)
+        for _ in range(20): r.pulse(1.0)
+        self.assertLessEqual(len(r.bolts), RX.BOLT_MAX[0])
+        run(r, 1.0); self.assertEqual(len(r.bolts), 0 if r.dyn.v["bolts"] < 0.2 else len(r.bolts)); self.assertTrue(all(b["age"] < b["life"] for b in r.bolts))
+
+    def test_working_crackles_more_than_idle_and_stopping_hardly_at_all(self):
+        counts = {}
+        for mode in ("idle", "working", "stopping"):
+            r = RX.Reactor(seed=5); r.dyn.set_mode(mode); run(r, 3.0); n = 0
+            for _ in range(300):
+                before = len(r.bolts); r.advance(1 / 30); n += len(r.bolts) > before
+            counts[mode] = n
+        self.assertGreater(counts["working"], counts["idle"] * 3 + 3); self.assertLess(counts["stopping"], counts["working"])
+
+    def test_detail_levels_cap_sparks_streaks_and_arcs(self):
+        r = RX.Reactor(); r.dyn.set_mode("working"); run(r, 4.0)
+        full = (len(r.embers), len(r.flow))
+        r.set_level(3); run(r, 2.0)
+        self.assertLessEqual(len(r.embers), RX.LEVELS[3]); self.assertLessEqual(len(r.flow), RX.FLOW_LEVELS[3]); self.assertLessEqual(len(r.bolts), RX.BOLT_MAX[3])
+        self.assertLess(len(r.flow), full[1]); r.set_level(99); r.set_level(-4)                    # out-of-range levels are clamped
+
+    def test_streaks_spiral_inward_while_working_and_outward_when_verified(self):
+        r = RX.Reactor(seed=2); r.dyn.set_mode("working"); run(r, 3.0)
+        self.assertGreater(len(r.flow), 20)
+        before = sorted(f[1] for f in r.flow); mean_before = sum(before) / len(before)
+        # follow the same particles for a short while: inward means their radius falls
+        snap = [list(f) for f in r.flow]; r.advance(0.1)
+        moved = [(a[1], b[1]) for a, b in zip(snap, r.flow) if abs(a[1] - b[1]) < 0.3]
+        self.assertTrue(moved and sum(1 for a, b in moved if b < a) > 0.9 * len(moved))
+        r2 = RX.Reactor(seed=2); r2.dyn.set_mode("ok"); run(r2, 3.0)
+        snap = [list(f) for f in r2.flow]; r2.advance(0.1)
+        moved = [(a[1], b[1]) for a, b in zip(snap, r2.flow) if abs(a[1] - b[1]) < 0.3]
+        self.assertTrue(moved and sum(1 for a, b in moved if b > a) > 0.9 * len(moved))
+        for rr in (r, r2):
+            for _ in range(200): rr.advance(0.05)
+            self.assertTrue(all(RX.CORE_R * 1.05 <= f[1] <= RX.VOICE_OUT + 0.1 for f in rr.flow))      # they stay inside the dial
+
+    def test_the_radar_sweep_follows_the_state(self):
+        rates = {}
+        for mode in ("idle", "working", "stopping"):
+            r = RX.Reactor(); r.dyn.set_mode(mode); run(r, 4.0); a = r.sweep_rot; run(r, 1.0); rates[mode] = (r.sweep_rot - a) % math.tau
+        self.assertGreater(rates["working"], rates["idle"] * 2); self.assertLess(rates["stopping"], 0.05)
+
+    def test_the_boot_sequence_reveals_elements_one_after_another_and_restarts(self):
+        r = RX.Reactor(); self.assertEqual(r.reveal(0), 0.0)
+        for k in range(1, 7):
+            r.boot = 0.0
+        seen = []
+        for _ in range(int(RX.BOOT_S * 30) + 5):
+            r.advance(1 / 30); seen.append([r.reveal(k) for k in range(7)])
+        for row in seen:
+            self.assertTrue(all(0.0 <= v <= 1.0 for v in row))
+            self.assertTrue(all(row[k] >= row[k + 1] - 1e-9 for k in range(6)), row)               # earlier elements are always ahead
+        self.assertEqual(seen[-1], [1.0] * 7)
+        r.restart_power_up(); self.assertEqual(r.boot, 0.0); self.assertEqual(r.reveal(0), 0.0)
+
+    def test_hexagon_pattern_and_the_light_wave_through_it(self):
+        cells = RX.hex_centers(400, 300, 34.0)
+        self.assertTrue(len(cells) > 40); self.assertEqual(len(cells), len(set(cells)))
+        self.assertTrue(all(0 <= x <= 400 + 51 and 0 <= y <= 300 + 90 for x, y in cells))
+        xs = sorted({x for x, y in cells}); self.assertAlmostEqual(xs[1] - xs[0], 34.0 * 1.5)
+        wave = RX.hex_wave(cells, 200, 150, 100.0, 30.0)
+        self.assertTrue(wave)
+        for i, k in wave:
+            x, y = cells[i]; self.assertLess(abs(math.hypot(x - 200, y - 150) - 100.0), 30.0); self.assertTrue(0.0 < k <= 1.0)
+        best = max(wave, key=lambda t: t[1]); x, y = cells[best[0]]
+        self.assertLess(abs(math.hypot(x - 200, y - 150) - 100.0), 12.0)                           # brightest on the ring itself
+        self.assertEqual(RX.hex_wave(cells, 200, 150, 5000.0, 30.0), [])                           # a ring far off the widget lights nothing
+
+
 class Adaptive(unittest.TestCase):
     def test_slow_frames_step_the_detail_down_after_patience_and_never_below_the_floor(self):
         q = RX.Quality(limit_ms=10.0, patience=5)

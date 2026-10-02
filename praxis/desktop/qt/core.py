@@ -16,9 +16,10 @@ Decoration is allowed; fake data is not: nothing here shows a number that is not
 import math
 import os
 import time
+from collections import deque
 
 from PySide6.QtCore import QPointF, QRectF, QTimer, Qt
-from PySide6.QtGui import (QColor, QConicalGradient, QFont, QFontMetricsF, QImage, QLinearGradient, QPainter, QPainterPath, QPen,
+from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QFont, QFontMetricsF, QImage, QLinearGradient, QPainter, QPainterPath, QPen,
                            QPixmap, QPolygonF, QRadialGradient)
 from PySide6.QtWidgets import QToolTip, QWidget
 
@@ -61,7 +62,9 @@ VOICE_TAG = {"listening": "LISTENING", "hearing": "HEARING", "thinking": "THINKI
              "speaking": "SPEAKING", "muted": "MIC OFF  ·  F4", "offline": "NO MICROPHONE"}
 VOICE_COLOR = {"listening": "accent", "hearing": "accent", "thinking": "violet", "speaking": "ok", "muted": "warn", "offline": "bad"}
 EXTENT = RX.EXTENT
+DISPLAY = {"droid": "droid \u00b7 factory", "devin": "devin", "claude": "claude", "codex": "codex", "ollama": "ollama"}   # how a brain is named on screen
 GOLD, GOLD_B, STEEL = RX.GOLD, RX.GOLD_BRIGHT, RX.STEEL
+HEX = 34.0                                             # edge length of the armour-plate hexagons behind the dial
 
 
 class CoreView(QWidget):
@@ -87,6 +90,9 @@ class CoreView(QWidget):
         self.voice = dict(state="off", level=0.0, speak=0.0, attentive=False)
         self._vhist, self._vacc = [0.0] * VOICE_BARS, 0.0
         self._poke = 0.0
+        self.log = deque(maxlen=6)    # (wall clock, text, level): the real event feed shown bottom-left
+        self.stats = {}               # real numbers for the readout bottom-right: label -> value
+        self._hex = None
         self._last = time.perf_counter()
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick)
@@ -157,6 +163,17 @@ class CoreView(QWidget):
 
     def set_footer(self, text):
         self.footer = text
+
+    def add_log(self, text, level="info", stamp=None):
+        """One line for the event feed (real events only). Immediate repeats are collapsed."""
+        text = str(text or "").strip()
+        if not text or (self.log and self.log[-1][1] == text):
+            return
+        self.log.append((stamp or time.strftime("%H:%M:%S"), text[:90], level))
+
+    def set_stats(self, stats):
+        """Real numbers for the readout (elapsed, steps, checks, which brain is thinking). Pass {} to clear it."""
+        self.stats = {str(k): str(v) for k, v in dict(stats or {}).items()}
 
     def pulse(self, level="info"):
         """A real event happened: flare the core and send a ripple outward (rate limited so a burst stays readable)."""
@@ -311,8 +328,11 @@ class CoreView(QWidget):
             g = self._geo()
             tint, mixv = self.reactor.tint_colour()
             self._background(p, g)
+            self._hex_waves(p, g, tint)
             self._aura(p, g, tint, mixv)
+            self._decor(p, g, tint)
             self._scale(p, g)
+            self._sweep(p, g, tint)
             self._links(p, g)
             self._housing(p, g, tint, mixv)
             # everything that glows goes into one buffer, which is then bloomed
@@ -327,7 +347,9 @@ class CoreView(QWidget):
                 self._rings(q, g, tint)
                 self._voice_ring(q, g)
                 self._coils_lit(q, g, tint, mixv)
+                self._flow(q, g, tint, mixv)
                 self._core(q, g, tint, mixv)
+                self._bolts(q, g, tint, mixv)
                 self._ripples(q, g)
                 self._streams(q, g)
                 self._embers(q, g)
@@ -343,12 +365,13 @@ class CoreView(QWidget):
             p.setOpacity(1.0)
             p.setCompositionMode(QPainter.CompositionMode_SourceOver)
             self._nodes(p, g)
+            self._panels(p, g)
             self._hud(p, g)
         finally:
             if p.isActive():
                 p.end()      # a bug while painting must never leave a painter open: that is a hard crash, not an error
         if self.quality.record((time.perf_counter() - t0) * 1000.0):
-            self.reactor.resize(self.quality.n)
+            self.reactor.set_level(self.quality.level)
 
     # -- background: gunmetal with a faint hex-plate pattern, never a stage set --
     def _background(self, p, g):
@@ -361,22 +384,103 @@ class CoreView(QWidget):
             base = QLinearGradient(0, 0, 0, h)
             base.setColorAt(0.0, QColor(13, 17, 23)); base.setColorAt(0.55, QColor(9, 12, 17)); base.setColorAt(1.0, QColor(5, 7, 10))
             q.fillRect(QRectF(0, 0, w, h), base)
-            s = 34.0                                              # hexagon edge length: a fine armour-plate texture
+            s = HEX
             q.setPen(QPen(QColor(120, 135, 152, 16), 1))
-            dx, dy = s * 1.5, s * math.sqrt(3) / 2
-            cols, rows = int(w / dx) + 2, int(h / dy) + 2
-            for ci in range(cols):
-                for ri in range(rows):
-                    x = ci * dx
-                    y = ri * dy * 2 + (dy if ci % 2 else 0)
-                    pts = [QPointF(x + math.cos(math.radians(60 * k)) * s, y + math.sin(math.radians(60 * k)) * s) for k in range(6)]
-                    q.drawPolyline(QPolygonF(pts[:4]))
+            for x, y in RX.hex_centers(w, h, s):
+                pts = [QPointF(x + math.cos(math.radians(60 * k)) * s, y + math.sin(math.radians(60 * k)) * s) for k in range(6)]
+                q.drawPolyline(QPolygonF(pts[:4]))
             vg = QRadialGradient(w / 2.0, h / 2.0, max(w, h) * 0.65)
             vg.setColorAt(0.0, QColor(0, 0, 0, 0)); vg.setColorAt(0.6, QColor(0, 0, 0, 40)); vg.setColorAt(1.0, QColor(0, 0, 0, 170))
             q.setPen(Qt.NoPen); q.setBrush(vg); q.drawRect(0, 0, w, h)
             q.end()
             self._bg = pm
         p.drawPixmap(0, 0, pm)
+
+    # -- hexagon waves: every real event, and a slow ambient pulse, lights the armour plates in a ring that travels outward --
+    def _hex_waves(self, p, g, tint):
+        w, h, cx, cy, R = g["w"], g["h"], g["cx"], g["cy"], g["R"]
+        if self._hex is None or self._hex[0] != (w, h):
+            self._hex = ((w, h), RX.hex_centers(w, h, HEX))
+        cells = self._hex[1]
+        waves = []
+        for t0, key in self.ripples:
+            u = (self.t - t0) / 1.6
+            if 0 <= u <= 1:
+                waves.append((R * (0.9 + 2.6 * RX.ease_out(u)), (1 - u) ** 1.3, QColor(C[key])))
+        sh = self.reactor.shock
+        if sh is not None:
+            waves.append((R * (0.9 + 3.4 * RX.ease_out(sh)), (1 - sh) ** 1.2 * 1.3, rgb(GOLD_B)))
+        if not REDUCED:
+            u = (self.t % 8.0) / 3.0                                         # the ambient pulse: a faint ring every 8 seconds
+            if u <= 1:
+                waves.append((R * (0.9 + 2.6 * RX.ease_out(u)), (1 - u) * 0.45, rgb(tint)))
+        if not waves:
+            return
+        p.setBrush(Qt.NoBrush)
+        s = HEX
+        for radius, strength, col in waves:
+            for i, k in RX.hex_wave(cells, cx, cy, radius, R * 0.32):
+                x, y = cells[i]
+                a = int(62 * strength * k)
+                if a <= 2:
+                    continue
+                p.setPen(QPen(QColor(col.red(), col.green(), col.blue(), a), 1.2))
+                p.drawPolygon(QPolygonF([QPointF(x + math.cos(math.radians(60 * j)) * s * 0.92, y + math.sin(math.radians(60 * j)) * s * 0.92) for j in range(6)]))
+
+    # -- decorative HUD circles between and around the real rings (dim, so the real data always reads first) --
+    def _decor(self, p, g, tint):
+        cx, cy, R = g["cx"], g["cy"], g["R"]
+        t = self.t
+        p.setBrush(Qt.NoBrush)
+        rev = self.reactor.reveal
+        specs = (
+            (RX.DECOR_R[0], 4, (STEEL, 55), [7, 5], 14.0),          # dashed, clockwise
+            (RX.DECOR_R[1], 3, (GOLD, 52), [1, 5], -9.0),           # dotted, counter-clockwise
+            (RX.DECOR_R[2], 2, (STEEL, 42), [18, 6], 6.0),          # long dashes, slow
+        )
+        for k, (r, order, (col, alpha), dashes, speed) in enumerate(specs):
+            f = rev(order)
+            if f <= 0.01:
+                continue
+            pen = QPen(rgb(col, alpha * f), 1.4)
+            pen.setDashPattern(dashes)
+            pen.setDashOffset(-t * speed * (0.4 if REDUCED else 1.0))
+            p.setPen(pen)
+            rr = r * R
+            box = QRectF(cx - rr, cy - rr, 2 * rr, 2 * rr)
+            if f < 0.999:
+                p.drawArc(box, 90 * 16, int(-360 * f * 16))
+            else:
+                p.drawEllipse(QPointF(cx, cy), rr, rr)
+        f = rev(5)
+        if f > 0.01:                                                  # three bright data arcs turning round the outside
+            rr = RX.DECOR_R[3] * R
+            box = QRectF(cx - rr, cy - rr, 2 * rr, 2 * rr)
+            p.setPen(QPen(rgb(GOLD, 120 * f), 2.2, Qt.SolidLine, Qt.FlatCap))
+            rot = math.degrees(self.reactor.tick_rot) * 3.0
+            for k in range(3):
+                p.drawArc(box, int((90 - rot - 120 * k) * 16), int(-26 * 16))
+
+    # -- the radar sweep: a bright edge with a fading trail, going round the dial --
+    def _sweep(self, p, g, tint):
+        cx, cy, R = g["cx"], g["cy"], g["R"]
+        f = self.reactor.reveal(4)
+        if f <= 0.01:
+            return
+        ang = -math.degrees(self.reactor.sweep_rot) + 90
+        r0, r1 = RX.VOICE_OUT * R * 1.04, RX.DECOR_R[0] * R * 1.04
+        cg = QConicalGradient(cx, cy, ang)
+        col = rgb(RX.mix(RX.BLUE, tint, 0.5))
+        c0 = QColor(col); c0.setAlpha(int(120 * f))
+        c1 = QColor(col); c1.setAlpha(0)
+        cg.setColorAt(0.0, c0); cg.setColorAt(0.11, c1); cg.setColorAt(1.0, c1)
+        band = QPainterPath()
+        band.addEllipse(QPointF(cx, cy), r1, r1)
+        band.addEllipse(QPointF(cx, cy), r0, r0)
+        p.setPen(Qt.NoPen); p.setBrush(cg); p.drawPath(band)
+        p.setPen(QPen(rgb(RX.mix(col.getRgb()[:3], RX.WHITE, 0.4), 170 * f), 1.6))
+        p.drawLine(QPointF(cx + math.cos(math.radians(ang)) * r0, cy - math.sin(math.radians(ang)) * r0),
+                   QPointF(cx + math.cos(math.radians(ang)) * r1, cy - math.sin(math.radians(ang)) * r1))
 
     def _aura(self, p, g, tint, mixv):
         """A soft glow behind the reactor in the state's colour (cached per colour state)."""
@@ -407,6 +511,7 @@ class CoreView(QWidget):
     # -- the outer gauge scale and the targeting brackets --
     def _scale(self, p, g):
         cx, cy, R = g["cx"], g["cy"], g["R"]
+        p.setOpacity(max(0.0, min(1.0, self.reactor.reveal(4))))                       # fades in at the end of the boot sequence
         rot = self.reactor.tick_rot
         r0 = RX.SCALE_R[0] * R
         for ang, kind in RX.ticks(rot):
@@ -434,6 +539,7 @@ class CoreView(QWidget):
         for k in range(4):
             mid = 45 + 90 * k
             p.drawArc(box, int((mid - 7) * 16), int(14 * 16))
+        p.setOpacity(1.0)
 
     # -- links to the AIs --
     def _link_pts(self, g, i):
@@ -513,6 +619,33 @@ class CoreView(QWidget):
             q.setBrush(rgb(col, 60 * c * self.reactor.dyn.v["bright"]))
             q.drawPolygon(QPolygonF([QPointF(x, y) for x, y in poly]))
 
+    def _flow(self, q, g, tint, mixv):
+        """Energy streaks spiralling into the core while it works (it is taking your goal in) and out of it when a goal verifies."""
+        cx, cy, R = g["cx"], g["cy"], g["R"]
+        col = RX.mix(RX.BLUE, tint, 0.3 + 0.6 * mixv)
+        outward = self.reactor.dyn.mode == "ok"
+        for ang, r, sp in self.reactor.flow:
+            back = -0.16 if not outward else 0.16                # the tail trails behind the motion
+            tail_r = r - (0.07 if not outward else -0.07)
+            a = int(200 * RX.clamp((1.25 - r) * 1.4 if not outward else (1.25 - r) * 1.2) * (0.5 + 0.5 * RX.clamp(sp / 0.6)))
+            if a <= 2:
+                continue
+            x0, y0 = cx + math.cos(ang) * r * R, cy + math.sin(ang) * r * R
+            x1, y1 = cx + math.cos(ang + back) * tail_r * R, cy + math.sin(ang + back) * tail_r * R
+            q.setPen(QPen(rgb(col, a), 1.5, Qt.SolidLine, Qt.RoundCap))
+            q.drawLine(QPointF(x0, y0), QPointF(x1, y1))
+
+    def _bolts(self, q, g, tint, mixv):
+        """Energy arcs from the core to the coils: they crackle on every real event and while it works."""
+        cx, cy, R = g["cx"], g["cy"], g["R"]
+        col = RX.mix(RX.BLUE, tint, 0.3 + 0.6 * mixv)
+        for b in self.reactor.bolts:
+            f = 1.0 - b["age"] / b["life"]
+            pts = [QPointF(cx + x * R, cy + y * R) for x, y in b["pts"]]
+            q.setBrush(Qt.NoBrush)
+            q.setPen(QPen(rgb(col, 80 * f), 4.5, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)); q.drawPolyline(QPolygonF(pts))
+            q.setPen(QPen(rgb(RX.mix(col, RX.WHITE, 0.7), 235 * f), 1.4, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)); q.drawPolyline(QPolygonF(pts))
+
     def _core(self, q, g, tint, mixv):
         """The glowing heart: palladium ring, the rotating triangle, and a core that flares with every real event."""
         cx, cy, R = g["cx"], g["cy"], g["R"]
@@ -573,6 +706,11 @@ class CoreView(QWidget):
             r = (RX.RING_R["plan"], RX.RING_R["act"], RX.RING_R["verify"])[which]
             rect = QRectF(cx - r * R, cy - r * R, 2 * r * R, 2 * r * R)
             q.setBrush(Qt.NoBrush)
+            rev = self.reactor.reveal(3 - which)                                   # boot: the inner ring draws first, the outer last
+            if rev < 0.999:
+                if rev > 0.01:
+                    q.setPen(QPen(rgb(RX.mix(STEEL, RX.BLUE, 0.6), 200 * rev), 2.0)); q.drawArc(rect, 90 * 16, int(-360 * rev * 16))
+                continue
             q.setPen(QPen(rgb(STEEL, 46), 1.0)); q.drawEllipse(QPointF(cx, cy), r * R, r * R)                 # the track
             states = self.ring_states(which)
             segs = RX.ring_segments(len(states))
@@ -699,18 +837,57 @@ class CoreView(QWidget):
             elif active:
                 sub, subcol = "calling...", "accent"
             self._hit.append((nd["family"], pt, nr, self._tip(nd)))
-            if not (active or sub or nd["family"] == self._hover):          # calm: a name is shown only when it matters or you point at it
-                continue
-            label = nd["family"] + (f"  x{len(nd['models'])}" if len(nd["models"]) > 1 else "")
+            hot = active or bool(sub) or nd["family"] == self._hover
+            label = DISPLAY.get(nd["family"], nd["family"]) + (f"  x{len(nd['models'])}" if len(nd["models"]) > 1 else "")
             gap = nr + 12
             x0 = pt.x() - gap - 130 if side < 0 else pt.x() + gap
             al = Qt.AlignRight if side < 0 else Qt.AlignLeft
-            p.setFont(self._font(self.ui, 9, QFont.DemiBold))
-            p.setPen(qc("text" if not (dim or nd["blocked"]) else "dim"))
-            p.drawText(QRectF(x0, pt.y() - 17, 130, 16), al | Qt.AlignVCenter, label)
+            p.setFont(self._font(self.mono, 8, QFont.Bold, 1.5))
+            p.setPen(qc("text" if hot and not (dim or nd["blocked"]) else "muted" if not (dim or nd["blocked"]) else "dim"))
+            p.drawText(QRectF(x0, pt.y() - 17, 130, 16), al | Qt.AlignVCenter, label.upper())
             if sub:
                 p.setFont(self._font(self.ui, 8)); p.setPen(qc(subcol))
                 p.drawText(QRectF(x0, pt.y() - 1, 130, 14), al | Qt.AlignVCenter, sub)
+
+    def _panels(self, p, g):
+        """The two readouts: the real event feed (bottom-left) and real numbers about the goal (bottom-right). Wide windows only."""
+        w, h = g["w"], g["h"]
+        if w < 1000 or h < 560:
+            return
+        f = self.reactor.reveal(6)
+        if f <= 0.02:
+            return
+        p.setOpacity(f)
+        f8 = self._font(self.mono, 8)
+        p.setFont(f8)
+        x, y0 = 26.0, h - 150.0
+        p.setPen(QPen(rgb(GOLD, 150), 1.2))
+        p.drawLine(QPointF(x, y0 - 4), QPointF(x + 18, y0 - 4)); p.drawLine(QPointF(x + 18, y0 - 4), QPointF(x + 24, y0 + 2))
+        p.setFont(self._font(self.mono, 7, QFont.Bold, 3)); p.setPen(rgb(GOLD, 200))
+        p.drawText(QRectF(x + 30, y0 - 11, 160, 14), Qt.AlignVCenter, "EVENT LOG")
+        p.setFont(f8)
+        lines = list(self.log)
+        for k, (stamp, text, level) in enumerate(lines):
+            age = len(lines) - 1 - k
+            a = int(255 * max(0.25, 1.0 - 0.17 * age))
+            col = QColor(C[LEVEL_COLOR.get(level, "accent")]) if level != "info" else QColor(C["text"])
+            row = QRectF(x, y0 + 8 + k * 14, 430, 14)
+            p.setPen(QColor(120, 135, 152, a)); p.drawText(row, Qt.AlignVCenter | Qt.AlignLeft, stamp)
+            p.setPen(QColor(col.red(), col.green(), col.blue(), a))
+            p.drawText(row.adjusted(62, 0, 0, 0), Qt.AlignVCenter | Qt.AlignLeft, QFontMetricsF(f8).elidedText(text, Qt.ElideRight, 360))
+        if self.stats:
+            xr = w - 26.0
+            p.setPen(QPen(rgb(GOLD, 150), 1.2))
+            p.drawLine(QPointF(xr, y0 - 4), QPointF(xr - 18, y0 - 4)); p.drawLine(QPointF(xr - 18, y0 - 4), QPointF(xr - 24, y0 + 2))
+            p.setFont(self._font(self.mono, 7, QFont.Bold, 3)); p.setPen(rgb(GOLD, 200))
+            p.drawText(QRectF(xr - 190, y0 - 11, 160, 14), Qt.AlignVCenter | Qt.AlignRight, "THE GOAL")
+            for k, (label, value) in enumerate(self.stats.items()):
+                row = QRectF(xr - 220, y0 + 8 + k * 16, 220, 16)
+                p.setFont(f8); p.setPen(QColor(120, 135, 152, 230))
+                p.drawText(row, Qt.AlignVCenter | Qt.AlignLeft, label.upper())
+                p.setFont(self._font(self.mono, 9, QFont.Bold)); p.setPen(qc("text"))
+                p.drawText(row, Qt.AlignVCenter | Qt.AlignRight, value)
+        p.setOpacity(1.0)
 
     def _glow_text(self, p, rect, text, col, flags, a=255):
         c = QColor(col)
@@ -726,6 +903,13 @@ class CoreView(QWidget):
         cx = g["cx"]
         p.setFont(self._font(self.mono, 11, QFont.Bold, 9))                        # wordmark, flanked by gold rules
         self._glow_text(p, QRectF(0, 10, w, 20), "PRAXIS", C["gold"], Qt.AlignCenter, 245)
+        if not REDUCED:                                                      # a highlight sweeps along the wordmark every few seconds
+            u = (self.t % 5.0) / 1.4
+            if u <= 1.0:
+                gx = cx - 60 + 120 * u
+                lg = QLinearGradient(gx - 22, 0, gx + 22, 0)
+                lg.setColorAt(0.0, rgb(GOLD_B, 0)); lg.setColorAt(0.5, rgb((255, 255, 255), 255)); lg.setColorAt(1.0, rgb(GOLD_B, 0))
+                p.setPen(QPen(QBrush(lg), 1)); p.drawText(QRectF(0, 10, w, 20), Qt.AlignCenter, "PRAXIS")
         p.setPen(QPen(rgb(GOLD, 150), 1.2))
         for sgn in (-1, 1):
             p.drawLine(QPointF(cx + sgn * 62, 20), QPointF(cx + sgn * 128, 20))

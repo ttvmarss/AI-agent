@@ -147,6 +147,50 @@ class DroidCLI(_CLIProvider):
         return self._parse(self._run(self._argv("low") + ["--cwd", cwd], task, cwd))
 
 
+_ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
+
+
+class DevinCLI(_CLIProvider):
+    """Cognition's Devin CLI (`devin`): the command-line coding agent that ships with Devin Desktop ("Install Devin CLI") and signs in
+    with `devin auth login`. Used non-interactively through `--print` (documented at docs.devin.ai/cli/reference/commands).
+    The prompt goes in a file (`--prompt-file`), the trust prompt is skipped (`--respect-workspace-trust false`: print mode cannot show it),
+    planning calls run in an empty folder with `--permission-mode normal` (it cannot ask, so nothing is edited), and a delegated task
+    uses `--permission-mode accept-edits` inside the workspace."""
+    binary = "devin"
+
+    def _argv(self, prompt_file, mode):
+        a = ["devin", "--print", "--prompt-file", prompt_file, "--permission-mode", mode, "--respect-workspace-trust", "false"]
+        return a + (["--model", self.model] if self.model else [])
+
+    def _go(self, prompt, mode, cwd):
+        with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as tf:
+            tf.write(prompt)
+            path = tf.name
+        try:
+            try:
+                out = self._run(self._argv(path, mode), "", cwd)
+            except ProviderError as e:
+                if not re.search(r"unexpected argument|unknown (option|flag)|unrecognized|invalid (option|flag)", str(e), re.I):
+                    raise
+                argv = ["devin", "-p", prompt[:24000], "--permission-mode", mode, "--respect-workspace-trust", "false"]   # older CLI: prompt inline
+                out = self._run(argv + (["--model", self.model] if self.model else []), "", cwd)
+        finally:
+            if os.path.exists(path):
+                os.unlink(path)
+        text = _ANSI.sub("", out).strip()
+        if not text:
+            raise ProviderError("devin: empty answer")
+        return text
+
+    def complete(self, role, messages):
+        system, convo = flatten(messages)
+        with tempfile.TemporaryDirectory() as empty:
+            return self._go(f"{system}\n\n{convo}".strip(), "normal", empty)
+
+    def delegate(self, task, cwd):
+        return self._go(task, "accept-edits", cwd)
+
+
 class OllamaProvider(Provider):
     """Local models over Ollama's REST API. Private data may use this provider."""
     can_complete = True

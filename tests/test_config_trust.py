@@ -37,7 +37,8 @@ cooldown_s = 0
 """)
         cfg = load_config(self.ws)
         self.assertEqual(cfg["providers"]["ollama"]["host"], DEFAULTS["providers"]["ollama"]["host"])
-        self.assertFalse(cfg["providers"]["devin"]["enabled"])
+        self.assertEqual(cfg["providers"]["devin"], DEFAULTS["providers"]["devin"])         # no org_id, no mode, nothing from the folder
+        self.assertNotIn("org_id", cfg["providers"]["devin"])
         self.assertEqual(cfg["sandbox"], DEFAULTS["sandbox"]); self.assertEqual(cfg["privacy"], DEFAULTS["privacy"])
         self.assertEqual(cfg["limits"], DEFAULTS["limits"])
 

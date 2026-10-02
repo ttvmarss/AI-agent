@@ -10,7 +10,8 @@ from .hardware import detect_hardware, profile_from_config
 from .openai_compat import OpenAICompatProvider
 from .paths import home
 from .usage import UsageTracker
-from .providers import ClaudeCLI, CodexCLI, DevinProvider, DroidCLI, OllamaProvider
+from . import discover
+from .providers import ClaudeCLI, CodexCLI, DevinCLI, DevinProvider, DroidCLI, OllamaProvider
 from .registry import Registry
 from .router import ProviderError, Router
 from .sandbox import Sandbox, detect
@@ -23,7 +24,9 @@ DEFAULTS = {
         "ollama": {"enabled": True, "host": "http://127.0.0.1:11434", "model": "auto",
                    "num_ctx": 0,            # 0 = auto: 8192 on <=8GB VRAM (KV cache would crowd out weights), else 16384
                    "memory_gb": 0, "prefer": [], "min_tokens_per_s": 6.0},
-        "devin": {"enabled": False},                  # needs DEVIN_API_KEY + DEVIN_ORG_ID; spends ACUs
+        # Devin: "auto" uses the `devin` command-line agent (from Devin Desktop, signed in with `devin auth login`) if it is found,
+        # else the cloud API (DEVIN_API_KEY + DEVIN_ORG_ID, spends ACUs); "cli" / "api" force one of them.
+        "devin": {"enabled": True, "mode": "auto", "model": ""},
         # free cloud tiers: each needs a (free) API key: `praxis keys set <name>`; see `praxis free`
         "groq": {"enabled": True}, "cerebras": {"enabled": True}, "ollama-cloud": {"enabled": True},
         "gemini": {"enabled": True}, "mistral": {"enabled": True}, "nvidia": {"enabled": True},
@@ -115,6 +118,7 @@ class Stack:
         self.profile = profile_from_config(cfg["hardware"], detect_hardware())
         self.providers, self.skipped = [], {}
         pc = cfg["providers"]
+        self.tools_found = discover.ensure_on_path(("devin", "droid"))      # Devin Desktop / Factory Desktop installs need not be on PATH
         for name, cls in (("claude", ClaudeCLI), ("codex", CodexCLI), ("droid", DroidCLI)):
             c = pc.get(name, {})
             if not c.get("enabled"):
@@ -177,15 +181,22 @@ class Stack:
                 budgets[pr.id] = {**derived, **budgets.get(pr.id, {})}
         self.usage = UsageTracker(budgets, path=os.path.join(home(), "usage.jsonl"))
         d = pc.get("devin", {})
-        if d.get("enabled"):
-            dp = DevinProvider(d.get("org_id"))
-            dp.tier = "best"
-            if dp.key and dp.org:
-                self.providers.append(dp)
-            else:
-                self.skipped["devin"] = "DEVIN_API_KEY / DEVIN_ORG_ID not set"
-        else:
+        mode = d.get("mode", "auto")
+        if not d.get("enabled"):
             self.skipped["devin"] = "disabled in config"
+        else:
+            cli_path = self.tools_found.get("devin") if mode in ("auto", "cli") else None
+            if cli_path:
+                self.providers.append(DevinCLI(model=d.get("model") or None, tier="balanced"))
+            elif mode in ("auto", "api") and os.environ.get("DEVIN_API_KEY") and (d.get("org_id") or os.environ.get("DEVIN_ORG_ID")):
+                dp = DevinProvider(d.get("org_id"))
+                dp.tier = "best"
+                self.providers.append(dp)
+            elif mode == "api":
+                self.skipped["devin"] = "DEVIN_API_KEY / DEVIN_ORG_ID not set"
+            else:
+                self.skipped["devin"] = ("the Devin CLI was not found: in Devin Desktop open the Command Palette and run \"Install Devin CLI\", "
+                                         "then `devin auth login` (or set DEVIN_API_KEY and DEVIN_ORG_ID for the cloud API)")
         b = cfg["sandbox"]["backend"]
         if not detect_sandbox or b == "none":
             self.sandbox = Sandbox()

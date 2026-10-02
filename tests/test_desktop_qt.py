@@ -340,6 +340,21 @@ class OneScreen(unittest.TestCase):
         self.assertTrue(pump(self.verified(win)))
         self.assertTrue(os.path.exists(os.path.join(ws, "made.txt"))); self.assertEqual(len(pilot.seen), 1)
 
+    def test_the_feed_and_readout_show_real_events_and_the_brains_that_are_online(self):
+        win, ctl, ws = self.make(stack=self.rich_stack())
+        self.assertTrue(pump(lambda: any("BRAINS ONLINE" in l[1] for l in win.core.log), 5), list(win.core.log))
+        line = next(l[1] for l in win.core.log if "BRAINS ONLINE" in l[1])
+        for fam in ("ollama", "groq", "claude"):
+            self.assertIn(fam, line)
+        self.assertTrue(any("DEVIN OFFLINE" in l[1] for l in win.core.log))                    # the rich stack has devin skipped: it says so plainly
+        self.goal(win, "make a.txt")
+        self.assertTrue(pump(self.verified(win), 12))
+        self.assertTrue(pump(lambda: len(win.core.log) > 3, 3), list(win.core.log))
+        self.assertTrue(all(isinstance(l[1], str) and l[1] for l in win.core.log))
+        st = win.core.stats
+        self.assertTrue(pump(lambda: win.core.stats.get("steps", "").endswith("/1") and win.core.stats["checks"] != "0/0", 3), win.core.stats)
+        self.assertRegex(win.core.stats["elapsed"], r"^\d\d:\d\d$"); self.assertEqual(win.core.stats["brain"], "-")    # finished: nothing is thinking now
+
     def test_the_screen_stays_alive_while_an_approval_dialog_is_open_so_you_can_still_mute_by_voice(self):
         # Found by the break-it campaign: the dialog ran a nested loop inside the timer's own slot, which froze that timer: no voice
         # state, no caption, and "praxis, mute" did nothing for as long as the dialog was open.

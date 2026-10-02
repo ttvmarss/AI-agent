@@ -65,6 +65,7 @@ $tools = @(
     @{ n = "claude";     d = "Claude subscription   (install: irm https://claude.ai/install.ps1 | iex   then run: claude)" },
     @{ n = "codex";      d = "ChatGPT / Codex       (see https://learn.chatgpt.com/docs/cli   then run: codex login)" },
     @{ n = "droid";      d = "Factory Droid         (see https://docs.factory.com/cli/getting-started/quickstart ; set FACTORY_API_KEY)" },
+    @{ n = "devin";      d = "Devin CLI             (in Devin Desktop: Command Palette > Install Devin CLI ; then: devin auth login)" },
     @{ n = "ollama";     d = "Ollama (local models) (https://ollama.com/download/windows)" },
     @{ n = "docker";     d = "Docker Desktop        (OPTIONAL: lets PRAXIS run code in a proven sandbox)" },
     @{ n = "nvidia-smi"; d = "NVIDIA driver         (needed for GPU use; Ollama wants driver 551.61 or newer)" }

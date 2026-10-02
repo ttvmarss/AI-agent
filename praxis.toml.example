@@ -20,8 +20,11 @@ num_ctx = 0                 # 0 = auto: 8192 on <=8 GB VRAM, else 16384
 min_tokens_per_s = 6.0      # models slower than this (measured, else estimated) are not auto-selected
 memory_gb = 0               # legacy flat memory budget; leave 0 and use [hardware] instead
 
-[providers.devin]           # remote agent sessions; spends ACUs => every use needs explicit approval
-enabled = false
+[providers.devin]           # Devin: uses the `devin` CLI (from Devin Desktop) if found, else the cloud API; every task asks your approval
+enabled = true
+mode = "auto"               # auto | cli | api
+model = ""                  # empty = Devin's own adaptive routing
+# for the cloud API instead: set DEVIN_API_KEY and DEVIN_ORG_ID (spends ACUs)
 org_id = ""                 # or env DEVIN_ORG_ID ; key via env DEVIN_API_KEY
 
 # One provider instance per model. "" = your account's default model. Claude IDs were verified live; the others come

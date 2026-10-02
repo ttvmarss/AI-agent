@@ -1658,4 +1658,41 @@ calm node labels, sealed ring, voice ring floor, bracket closing) and one surviv
 **Not verified:** how it looks on your display (I reviewed rendered frames on a Linux offscreen surface, not Windows with your DPI), and its frame rate on
 your GPU (about as cheap as before: a handful of vector shapes plus the same bloom; it lowers its own detail if frames run slow).
 
-*End of Revision Zero (with addenda 38 to 46). Failures get logged, not hidden.*
+## 47. Status addendum — the Devin and Factory brains, and a more MCU reactor (2026-10-02)
+
+**Request (with two shortcuts uploaded: Devin Desktop and Factory Desktop):** more animation and more of the MCU look; and "hook these brains to it".
+
+**47.1 What the shortcuts showed.** `Devin.exe` is in `%LOCALAPPDATA%\Programs\Devin` (the properties name it Windsurf: since 2 June 2026 Windsurf is
+Devin Desktop; [announcement coverage](https://tech-insider.org/windsurf-devin-desktop-vs-cursor-2026/)). `factory-desktop.exe` is "Desktop application for Droid CLI".
+Both are GUI apps that cannot be driven. What *can* be driven are their command-line agents: the **Devin CLI** (`devin`, installed from Devin Desktop's Command
+Palette, "Install Devin CLI", or [`irm https://static.devin.ai/cli/setup.ps1 | iex`](https://docs.devin.ai/cli); signs in with `devin auth login`) and Factory's
+`droid` ([droid exec](https://docs.factory.ai/droid-exec/overview)), which PRAXIS already used (your `doctor` output showed `droid READY 0.224.1`).
+The screenshot's three purple hexagons were Claude, Codex and Droid; Devin was missing because it was off by default and only spoke to the paid cloud API.
+
+**47.2 Devin as a brain.** New `DevinCLI` provider (`providers.py`), written from the [command reference](https://docs.devin.ai/cli/reference/commands): `devin --print
+--prompt-file <file> --permission-mode normal --respect-workspace-trust false` for thinking (empty temp folder; print mode cannot ask, so nothing is edited), and
+`--permission-mode accept-edits` inside the workspace for delegated tasks; the prompt goes in a file (Windows argv limits), colour codes are stripped, limit and
+empty-answer errors are classified, and an older CLI without `--prompt-file` falls back to `-p <prompt>`. Config `[providers.devin]` is now on by default with
+`mode = "auto"`: use the CLI if found, else the cloud API when `DEVIN_API_KEY` and `DEVIN_ORG_ID` are set, else say exactly what to do ("in Devin Desktop open the Command
+Palette and run Install Devin CLI, then devin auth login"). New `praxis/discover.py` finds Devin and Droid installs that are **not on PATH** (known install folders under
+`%LOCALAPPDATA%` and `%USERPROFILE%`, a shallow look beside the desktop app) and adds them to PATH for the process; the Devin candidate must answer `--help` with `--print`,
+so the *editor launcher* (which would open a window) or `Devin.exe` itself is never mistaken for the CLI. `praxis doctor` prints where each was found. Delegation to
+Devin still always asks (Class 4). Tested with fake programs (19 tests: argv, prompt file contents, modes, model flag, fallback, error classes, discovery incl. the
+editor-launcher trap, stack wiring in every mode). **Not verified: I have never run the real `devin` or `factory` programs here**; the exact install folder of the Devin
+CLI on Windows is a guess (the PATH route is the sure one) and `--print` together with `--prompt-file` is assumed from the reference, with the inline fallback if it is not.
+
+**47.3 The brains on screen.** Every brain is now named under its hexagon (CLAUDE, CODEX, DROID \u00b7 FACTORY, DEVIN, OLLAMA...), dim until it matters and bright when it is
+being called, resting, nearly spent, or pointed at; at start the feed says `BRAINS ONLINE ...`, and plainly `DEVIN OFFLINE: <why>` or `DROID OFFLINE: <why>` if one is missing.
+
+**47.4 The MCU layer.** All of it is driven by real state, and none of it by invented numbers. **Boot sequence:** the HUD draws itself in over 3.6 s (coils light one by
+one, then the VERIFY, ACT and PLAN rings sweep round, then the scale, then the readouts). **Radar sweep** round the dial (faster while working). **Energy arcs** crackle from the core to the
+coils on every real event and while it works. **Energy streaks** spiral *into* the core while it works and *out* when a goal verifies. **Hexagon waves:** every real event, the
+verified shockwave, and a faint ambient pulse every 8 s light the armour plates in a travelling ring. **Decorative circles** (dashed, dotted, long-dash, three data arcs)
+turn between the real rings. The wordmark shimmers. **Event log** (bottom-left): the last six real events with their clock times. **Goal readout** (bottom-right): elapsed time,
+steps done, checks passed, which brain is thinking, and the cost when there is one; all taken from the real view. Both panels appear only on windows 1000 px wide or more.
+Quality governor: a slow machine loses sparks, streaks and arcs first, then the bloom. 33 pure-engine tests and 42 rendered-pixel tests cover it (arc geometry, state-dependent
+rates, inward/outward streaks, boot ordering and completion, hexagon wave maths, panels and their absence on narrow windows, the readout clearing, reduced motion).
+Defects found while building it: the boot reveal never fully finished for the last elements (delay too long for the 1.0 timeline); the hexagon pattern generated twice
+the rows it needed; the goal clock never started for a goal shorter than one UI tick.
+
+*End of Revision Zero (with addenda 38 to 47). Failures get logged, not hidden.*

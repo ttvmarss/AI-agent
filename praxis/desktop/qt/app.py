@@ -79,6 +79,7 @@ class MainWindow(QMainWindow):
         self._voice_started, self._voice_msg_shown, self._mute_request, self._heard_at = False, False, False, 0.0
         self._shown, self._loaded_ws, self._closing = set(), None, False
         self._ask_queue, self._asking = [], False
+        self._goal_t0, self._goal_dur, self._goal_id = None, None, ""
         self._prev_state, self.hint = None, ""
         self.setWindowTitle("PRAXIS")
         self.setMinimumSize(760, 520)
@@ -239,12 +240,15 @@ class MainWindow(QMainWindow):
             for e in u.events:
                 text, level = summarize(e)
                 self.core.pulse(level)               # a real event: the core flares, a ripple runs outward
+                if text:
+                    self.core.add_log(text, level)   # ...and it is written to the event feed
             if text:
                 self.core.set_caption(text, level)   # and the latest one is typed out
             if self.voice is not None and u.events:
                 self.voice.conductor.on_events(u.events)     # the milestones among them are spoken
             waiting = (bool(u.approvals) or u.view.status == "WAITING FOR YOU") and state == "working"
             apply_view(self.core, u.view, state, waiting, self.hint, c.error)
+            self._update_stats(u.view, state)
             for req in u.approvals:
                 if req.id not in self._shown:
                     self._shown.add(req.id)
@@ -261,6 +265,27 @@ class MainWindow(QMainWindow):
         if c.notes:
             self.note(c.notes.pop(), "bad")
         self._prev_state = state
+
+    def _update_stats(self, v, state):
+        """The real numbers beside the core: how long the goal has run, steps and checks done, which brain is thinking, what it cost."""
+        now = time.time()
+        if v.goal_id and v.goal_id != self._goal_id:                 # a new goal: the clock starts when we first see it (even a very quick one)
+            self._goal_id, self._goal_t0, self._goal_dur = v.goal_id, now, None
+        elif state == "working" and self._goal_t0 is None and self._goal_dur is None:
+            self._goal_t0 = now
+        if state != "working" and self._goal_t0 is not None:
+            self._goal_dur, self._goal_t0 = now - self._goal_t0, None
+        secs = (now - self._goal_t0) if self._goal_t0 is not None else self._goal_dur
+        if not v.goal_id or secs is None:
+            self.core.set_stats({})
+            return
+        done = sum(s.state in ("verified", "ran") for s in v.steps)
+        stats = {"elapsed": f"{int(secs) // 60:02d}:{int(secs) % 60:02d}", "steps": f"{done}/{len(v.steps)}",
+                 "checks": f"{sum(1 for e in v.evidence if e.get('passed'))}/{len(v.evidence)}",
+                 "brain": (v.active_provider.split("/")[0] if v.active_provider else "-")}
+        if v.cost:
+            stats["cost"] = f"${v.cost:.3f}"
+        self.core.set_stats(stats)
 
     def _update_voice(self, state):
         if self._mute_request:                       # "praxis, mute" arrives from the voice thread
@@ -322,6 +347,15 @@ class MainWindow(QMainWindow):
         self.hint = "" if n else (
             "No AI models yet. Sign in to Claude (claude), ChatGPT (codex) or Factory (droid), install Ollama for local models, "
             f"or add a free key:  python -m praxis keys set groq   Not found: {missing}.")
+        fams = list(dict.fromkeys(str(x).split("/")[0] for x in info.get("providers", [])))
+        if fams:
+            self.core.add_log("BRAINS ONLINE  " + " \u00b7 ".join(fams), "ok")
+        for name in ("devin", "droid"):                                       # the two desktop-app brains: say plainly if one is missing
+            why = info.get("skipped", {}).get(name)
+            if why:
+                self.core.add_log(f"{name.upper()} OFFLINE: {str(why)[:70]}", "warn")
+        if info.get("sandbox"):
+            self.core.add_log(f"SANDBOX {str(info['sandbox']).upper()}" + ("" if info.get("sandbox_strong") else " \u00b7 risky steps ask first"), "info" if info.get("sandbox_strong") else "warn")
         if n:
             self.note(f"Ready. {n} model instance(s) available." + ("  Interrupted goal found: Ctrl+R resumes it." if c.unfinished() else ""))
 

@@ -81,7 +81,10 @@ def cmd_doctor(stack, ws, ping, ping_all=False):
             if name == "ollama":
                 line += f"  selected={first.resolve_model()}"
             print(line)
-            if name == "devin":
+            where = getattr(stack, "tools_found", {}).get(name)
+            if where:
+                print(f"           at {where}")
+            if name == "devin" and not getattr(first, "can_complete", True):
                 print("           delegate-only (Class 4, spends ACUs); not pinged so no session is started")
                 continue
             sample = next((x for x in inst if getattr(x, "tier", None) == "balanced"), inst[0])
