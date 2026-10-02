@@ -93,7 +93,7 @@ class Launcher(unittest.TestCase):
         def fake(cmd, **kw): seen.update(cmd=cmd, kw=kw); return mock.Mock(pid=42)
         out = []
         self.assertEqual(launch.start(["C:/proj"], popen=fake, out=out.append), 42)
-        self.assertEqual(seen["cmd"][1:], ["-m", "praxis.desktop", "C:/proj"])
+        self.assertEqual(seen["cmd"][1:], ["-m", "praxis.ui", "C:/proj"])
         self.assertEqual(seen["kw"]["cwd"], launch.ROOT)
         self.assertIn(launch.ROOT, seen["kw"]["env"]["PYTHONPATH"])
         self.assertTrue(seen["kw"].get("start_new_session") or seen["kw"].get("creationflags"))

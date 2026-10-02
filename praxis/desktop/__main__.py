@@ -1,4 +1,5 @@
-"""Launch the desktop app:  python -m praxis.desktop [workspace]   (--tk forces the simple Tk shell)"""
+"""Launch the desktop app:  python -m praxis.desktop [workspace]
+   (the web interface by default; --qt the older Qt window, --tk the simple Tk shell)"""
 import os
 import sys
 
@@ -13,6 +14,10 @@ def _qt_available():
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
+    if "--qt" not in argv and "--tk" not in argv:           # the interface is the web UI (TypeScript + WebGL) unless an older window is asked for by name
+        from ..ui.__main__ import main as web_main
+        return web_main([a for a in argv if a != "--web"])
+    argv = [a for a in argv if a != "--qt"]
     force_tk = "--tk" in argv
     argv = [a for a in argv if a != "--tk"]
     use_qt = not force_tk and _qt_available()

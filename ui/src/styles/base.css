@@ -1,0 +1,17 @@
+@import "@fontsource/rajdhani/latin-400.css";
+@import "@fontsource/rajdhani/latin-500.css";
+@import "@fontsource/rajdhani/latin-600.css";
+@import "@fontsource/rajdhani/latin-700.css";
+@import "@fontsource/share-tech-mono/latin-400.css";
+
+:root {
+  --accent-rgb: 89 216 255;
+  --hot-rgb: 214 246 255;
+  --accent: rgb(var(--accent-rgb));
+  --hot: rgb(var(--hot-rgb));
+  --persona: 0;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--c-void, #02060b); color: var(--c-text, #e3f3fb); font-family: var(--font-display, "Rajdhani", system-ui, sans-serif); -webkit-font-smoothing: antialiased; user-select: none; }
+canvas#scene { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+#hud { position: fixed; inset: 0; pointer-events: none; }

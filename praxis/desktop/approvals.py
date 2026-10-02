@@ -14,6 +14,8 @@ def describe(req):
         return f"Hand a task to the cloud agent '{a.get('agent')}':\n\n{a.get('task', '')}{extra}"
     if req.tool == "shell.run":
         return f"Run this command in the workspace:\n\n{a.get('cmd', '')}"
+    if req.tool == "desktop.open":
+        return f"Open this on your computer:\n\n{a.get('target', '')}\n\nA website opens in your browser; an application is started."
     if req.tool == "plan.replan":
         steps = a.get("steps", [])
         lines = [f"  {s.get('id')}: {s.get('tool')} {json.dumps(s.get('args', {}))[:110]}" for s in steps]

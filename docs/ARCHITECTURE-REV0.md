@@ -1776,4 +1776,37 @@ reveal, spec fallback, the colour of brains and steps, the expression whitelist,
 of them first slipped through, which is why `visible`/`opacity`/`boot` and the row colours now have their own rendered tests.
 **Not verified here:** how it looks and runs on your Windows screen, and `praxis hud` hot-reload on Windows file timestamps (tested with a fake mtime bump).
 
-*End of Revision Zero (with addenda 38 to 50). Failures get logged, not hidden.*
+## 51. Status addendum — terminals, "open Chrome", and a professional front end (2026-10-02)
+
+**Defects the user hit on the real PC, and the fixes.**
+1. *"I tell it to open something, it says 'On it', a whole bunch of terminals open, and nothing happens."* Root cause: under the windowless launcher
+   (`pythonw`), every child console program (the model CLIs, `taskkill`, `powershell`, `nvidia-smi`, `cmd`) was started with only
+   `CREATE_NEW_PROCESS_GROUP`, so Windows opened a **new visible terminal for each one**; a goal that tried several models opened a pile of them, and
+   closing one killed the call with exit 3221225786 (Ctrl+C). Fix: one helper, `praxis/winproc.py`, starts every child hidden (`CREATE_NO_WINDOW` +
+   a hidden `STARTUPINFO`); a test walks the source and fails if any module launches a process any other way.
+2. *"Nothing happens."* There was no way to open an application. New: `praxis/opener.py` and the `desktop.open{target}` tool: applications by name
+   (Chrome, Edge, Firefox, Notepad, Calculator, VS Code, Office, Spotify, Settings...), well-known sites, other URLs and workspace files, resolved,
+   **classified for the Guard** (known app/site Class 2, any other website Class 3 = asks you, anything that could execute, an unknown program, a path
+   outside the workspace, `javascript:`/`file:`/credentials-in-URL Class 4, and a plan shaped by untrusted file text can never open anything), started
+   with ShellExecute on Windows, and **proved** by a new `process_running` verifier that polls the process list. If the program does not appear the goal
+   FAILS instead of reporting "done". A bug the tests found on the way: `notes.txt` was read as a web address.
+3. *Latency.* "Open Chrome" cost a planner call, a critic call, ~20 s and $0.17. A **reflex layer** (`praxis/reflex.py`) recognises plain "open X" requests
+   and supplies the plan itself: instant (0.3 s here), free, logged as `reflex.matched`, and still run through the same Guard, approvals and verification.
+
+**A real front end instead of Python-drawn UI.** The Qt HUD is replaced as the default by a TypeScript + WebGL interface (`/ui`, Vite, Three.js),
+shown in an app-mode Edge/Chrome window (no install; PySide6 is no longer needed). Design: PRAXIS's heart as an **exploded-view arc reactor** in a workshop
+hologram (housing, ten coils, scale ring, triangle, core, joined by dashed leaders; holo table, projector beam, scanning plane, dust, bloom, projector
+imperfections), three tilted gyro rings = the real pipeline, glass panels (MISSION, MINDS, EVENT STREAM, TELEMETRY), leader-line callouts, an in-scene
+authorisation card, a boot sequence; JARVIS/FRIDAY as the `persona` number per state. Architecture: the engine streams a typed `Frame` ten times a second
+over Server-Sent Events and accepts schema-validated commands (`ui/src/protocol.ts`, `praxis/ui/`); `Session` holds everything the Qt window used to do
+(folding events, stats, voice start-up, approvals, folder switching) with no UI in it. **The server is locked to the one window it opens:** 127.0.0.1
+only, a random per-run key traded once for an HttpOnly SameSite=Strict cookie, Host-header check (DNS rebinding), custom header + Origin check on POSTs
+(cross-site forgery), 64 KB bodies, strict command schema, no path escape from the static folder, a CSP; PRAXIS can run commands on this computer, so no
+other web page may drive it. The look is data (`ui/src/theme.json`, overridable by `~/.praxis/theme.json`); the previous JSON HUD engine remains for `--qt`.
+**Tests:** 24 engine/server tests (`tests/test_ui_server.py`), 20 front-end unit tests (vitest), 6 browser end-to-end checks of the real interface against
+the real engine (a goal to VERIFIED, an approval denied by Escape and approved by click, key commands, link loss), 32 tests of `opener`/`reflex`/`winproc`.
+CI (`.github/workflows/ci.yml`): engine tests, strict typecheck, unit tests, a build that must match the committed one, and the browser end-to-end run.
+**Not verified here:** how it looks and performs on your Windows GPU, Edge/Chrome discovery and app-window launch on Windows, the Windows PATH/launcher
+steps, and live voice (no microphone or speakers here); the visuals were reviewed through software-rendered WebGL screenshots only.
+
+*End of Revision Zero (with addenda 38 to 51). Failures get logged, not hidden.*

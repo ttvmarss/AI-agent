@@ -28,20 +28,11 @@ if ($pyOk) {
     }
 }
 
-# 1b. The command-center window (PySide6). Optional: without it PRAXIS opens a basic Tk window instead.
+# 1b. The interface opens in Microsoft Edge or Google Chrome (as a plain app window). Windows 10/11 already has Edge.
 if ($pyOk) {
-    $qt = & py -3 -c "import PySide6.QtWidgets; print(1)" 2>$null
-    if ($qt -eq "1") {
-        Say "[ok]   Command-center UI (PySide6)" Green
-    } else {
-        Say "[miss] Command-center UI (PySide6, about 150 MB; without it you get a basic window)" Yellow
-        $a = Read-Host "Install it now with pip (for your user only)? (y/N)"
-        if ($a -eq "y") {
-            & py -3 -m pip install --user "PySide6-Essentials>=6.7"
-            $qt = & py -3 -c "import PySide6.QtWidgets; print(1)" 2>$null
-            if ($qt -eq "1") { Say "[ok]   Command-center UI installed" Green } else { Say "[warn] Install failed; PRAXIS will use the basic window." Yellow }
-        }
-    }
+    $br = & py -3 -c "from praxis.ui import window; print(','.join(k for _, k in window.find_browsers()))" 2>$null
+    if ($br) { Say "[ok]   Window for the interface ($br)" Green }
+    else { Say "[miss] Edge or Chrome (PRAXIS will open in your default browser instead)" Yellow }
 }
 
 # 1c. Voice: speak to PRAXIS and it speaks back. Everything runs on this machine (no audio leaves it).
@@ -81,7 +72,7 @@ if ($pyOk) {
         $ws = New-Object -ComObject WScript.Shell
         $lnk = $ws.CreateShortcut((Join-Path ([Environment]::GetFolderPath("Desktop")) "PRAXIS.lnk"))
         $lnk.TargetPath = $pyw
-        $lnk.Arguments = "-3 -m praxis.desktop"
+        $lnk.Arguments = "-3 -m praxis.ui"
         $lnk.WorkingDirectory = $repo
         $lnk.Description = "PRAXIS"
         $lnk.Save()

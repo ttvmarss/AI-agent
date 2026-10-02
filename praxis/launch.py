@@ -20,7 +20,7 @@ def windowless_python(exe=None):
 
 
 def command(args=(), exe=None):
-    return [windowless_python(exe), "-m", "praxis.desktop", *args]
+    return [windowless_python(exe), "-m", "praxis.ui", *args]
 
 
 def start(args=(), popen=subprocess.Popen, out=print):
