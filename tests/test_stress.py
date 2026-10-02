@@ -139,6 +139,48 @@ class ConductorChaos(unittest.TestCase):
             self.assertIn(("respond", "r1", True), a.calls, phrase)
 
 
+class ConversationChaos(unittest.TestCase):
+    def test_classifier_smalltalk_and_tidy_are_total_and_chat_never_acts(self):
+        from praxis.voice import chat as C
+        r = random.Random(SEED + 7)
+        for _ in range(N * 2):
+            t = rnd_text(r)
+            self.assertIn(C.classify(t), ("task", "chat"))
+            st = C.smalltalk(t)
+            self.assertTrue(st is None or (isinstance(st, str) and 0 < len(st) < 200))
+            out = C.tidy(r.choice([t, "x" * 5000, None, "```code```", "sk-ABCDEFGH12345678 " * 30]))
+            self.assertLessEqual(len(out), 425); self.assertNotIn("sk-ABCDEFGH", out)
+
+    def test_random_conversations_with_a_flaky_model_never_start_goals_or_answer_approvals(self):
+        from praxis.voice.chat import Chat, classify
+        r = random.Random(SEED + 8)
+        for i in range(max(20, N // 40)):
+            calls = {"n": 0}
+            def ask(m):
+                calls["n"] += 1
+                x = r.random()
+                if x < .25: raise RuntimeError("no eligible provider")
+                if x < .4: raise OSError("net")
+                if x < .5: return None
+                if x < .6: return "word " * 3000
+                return "Fine."
+            a, said, t = Rec(), [], [1000.0]
+            c = Conductor(a, lambda text, urgent=False: said.append(text), clock=lambda: t[0], chat=Chat(ask))
+            for step in range(r.randint(5, 25)):
+                t[0] += r.choice([0.5, 3, 12, 40])
+                if r.random() < .15 and not a.pending_list:
+                    a.pending_list.append(types.SimpleNamespace(id=f"r{step}", cls=r.choice([2, 4]), tool="shell.run", args={"cmd": "x"}))
+                text = r.choice(["Praxis, how are you", "Praxis, explain recursion", "what time is it", "Praxis, " + str(rnd_text(r)), rnd_text(r), "Hello Praxis", "approve", "Praxis, approve"])
+                before = len(a.calls); pend = a.pending()
+                c.hear(text)
+                for call in a.calls[before:]:
+                    if call[0] == "submit":
+                        self.assertFalse(pend); self.assertEqual(classify(call[1]), "task", call)       # only tasks are ever submitted
+            time.sleep(0.05)
+            for line in said:
+                self.assertLess(len(line), 450)
+
+
 class Audio(unittest.TestCase):
     def feed(self, seg, pcm):
         out = []

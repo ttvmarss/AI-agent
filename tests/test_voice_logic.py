@@ -142,8 +142,8 @@ class WakeWord(unittest.TestCase):
 
 class Narration(unittest.TestCase):
     def test_milestones_are_spoken_and_commentary_is_not(self):
-        s, u = narrator.for_event("plan.accepted", {"plan": {"steps": [{}, {}, {}]}}); self.assertEqual((s, u), ("Plan ready: 3 steps.", False))
-        self.assertIn("1 step.", narrator.for_event("plan.accepted", {"plan": {"steps": [{}]}})[0])
+        s, u = narrator.for_event("plan.accepted", {"plan": {"steps": [{}, {}, {}]}}); self.assertEqual((s, u), (None, False))      # the plan is not narrated
+        s, u = narrator.for_event("plan.accepted", {"plan": {"steps": [{}]}, "tainted": True}); self.assertIn("reversible", s)
         self.assertIn("reversible", narrator.for_event("plan.accepted", {"plan": {"steps": [{}]}, "tainted": True})[0])
         for t in ("model.try", "model.call", "step.intent", "tool.result", "verify.result", "checkpoint", "guard.decision"):
             self.assertEqual(narrator.for_event(t, {"verdict": "ALLOW"}), (None, False), t)
@@ -203,6 +203,86 @@ class FakeActions:
     def status_text(self): return "STATUS"
 
 
+class Conversation(unittest.TestCase):
+    def setUp(self):
+        from praxis.voice.chat import Chat
+        self.asked, self.said = [], []
+        def ask(messages): self.asked.append(messages); return self.reply
+        self.reply = "A mutex lets one thread at a time use a resource. It stops them tripping over each other."
+        self.a = FakeActions()
+        self.t = [100.0]
+        self.c = Conductor(self.a, lambda text, urgent=False: self.said.append(text), clock=lambda: self.t[0], chat=Chat(ask))
+
+    def wait(self, n=1):
+        import time as _t
+        end = _t.time() + 3
+        while len(self.said) < n and _t.time() < end: _t.sleep(0.01)
+
+    def test_task_or_chat(self):
+        from praxis.voice.chat import classify
+        for t in ("create a file called a.txt", "can you fix the failing tests", "please delete the old logs", "run the tests", "I want you to build a website",
+                  "write the tests for calc.py", "open the browser"):
+            self.assertEqual(classify(t), "task", t)
+        for t in ("how are you", "what time is it", "explain what a mutex is", "why is the sky blue", "tell me a joke", "write a poem about the sea",
+                  "how do I fix this bug", "do you know python", "hello", "thanks", "what is the capital of France", ""):
+            self.assertEqual(classify(t), "chat", t)
+
+    def test_small_talk_is_answered_instantly_without_a_model_and_is_never_a_goal(self):
+        for t, expect in (("Praxis, how are you?", "nominal"), ("Praxis, hello", "What can I do"), ("Praxis, thank you", "Any time"),
+                          ("Praxis, can you hear me", "Loud and clear"), ("Praxis, who are you", "PRAXIS")):
+            self.said.clear(); self.assertEqual(self.c.hear(t), "chat", t); self.wait()
+            self.assertIn(expect, self.said[0]); self.t[0] += 10
+        self.assertEqual(self.asked, []); self.assertEqual(self.a.calls, [])               # no model call, no goal, nothing planned or verified
+
+    def test_a_question_goes_to_a_model_with_a_spoken_style_prompt_and_is_answered_not_planned(self):
+        self.assertEqual(self.c.hear("Praxis, explain what a mutex is"), "chat"); self.wait()
+        self.assertIn("mutex", self.said[0]); self.assertEqual(self.a.calls, [])
+        sys_prompt = self.asked[0][0]["content"]
+        self.assertIn("SPOKEN", sys_prompt); self.assertEqual(self.asked[0][-1], {"role": "user", "content": "explain what a mutex is"})
+
+    def test_it_remembers_the_last_few_turns_and_follow_ups_need_no_wake_word(self):
+        self.c.hear("Praxis, explain what a mutex is"); self.wait(); self.t[0] += 5
+        self.reply = "Yes, in most languages."
+        self.assertEqual(self.c.hear("is that the same as a lock"), "chat"); self.wait(2)          # no wake word: inside the follow-up window
+        hist = [m["content"] for m in self.asked[1] if m["role"] != "system"]
+        self.assertEqual(hist[0], "explain what a mutex is"); self.assertIn("one thread", hist[1]); self.assertEqual(hist[-1], "is that the same as a lock")
+        self.t[0] += 60
+        self.assertTrue(self.c.hear("is that the same as a lock please").startswith("ignored"))   # window closed
+
+    def test_answers_are_fit_to_be_spoken_and_a_failing_model_gets_a_graceful_reply(self):
+        from praxis.voice.chat import tidy, Chat
+        t = tidy("**Sure!** Here:\n```python\nprint(1)\n```\n- one\n- two. My key is sk-ABCDEFGH12345678 " + "word " * 200)
+        self.assertNotIn("```", t); self.assertNotIn("print(1)", t); self.assertNotIn("sk-ABC", t); self.assertLessEqual(len(t), 425)
+        def boom(m): raise RuntimeError("no eligible provider")
+        self.assertIn("free key", Chat(boom).reply("explain recursion"))
+        def boom2(m): raise OSError("network")
+        self.assertIn("couldn't reach", Chat(boom2).reply("explain recursion"))
+        self.assertIn("answer", Chat(lambda m: "   ").reply("explain recursion"))
+
+    def test_a_slow_model_gets_one_spoken_holding_line_not_silence(self):
+        import threading, time as _t
+        gate = threading.Event()
+        def slow(m): gate.wait(6); return "Done thinking."
+        from praxis.voice.chat import Chat
+        self.c.chat = Chat(slow)
+        self.c.hear("Praxis, explain recursion in depth"); end = _t.time() + 5
+        while "One moment." not in self.said and _t.time() < end: _t.sleep(0.05)
+        self.assertEqual(self.said, ["One moment."]); gate.set(); self.wait(2)
+        self.assertEqual(self.said[-1], "Done thinking.")
+
+    def test_the_name_at_the_end_of_a_sentence_counts_for_conversation_but_never_for_tasks(self):
+        self.assertEqual(self.c.hear("Hello Praxis."), "chat"); self.wait(); self.assertIn("What can I do", self.said[0])
+        self.said.clear(); self.t[0] += 10
+        self.assertEqual(self.c.hear("What time is it, Praxis?"), "chat"); self.wait(); self.assertIn("It's", self.said[0])
+        self.said.clear(); self.t[0] += 60
+        self.assertTrue(self.c.hear("fix the bug in praxis").startswith("ignored"))        # a task about a project called praxis is not a command
+        self.assertTrue(self.c.hear("delete everything praxis").startswith("ignored")); self.assertEqual(self.a.calls, [])
+
+    def test_without_a_chat_brain_everything_is_still_a_goal(self):
+        c = Conductor(self.a, lambda t, u=False: None, clock=lambda: 1.0)
+        self.assertEqual(c.hear("Praxis, how are you today my friend"), "goal")
+
+
 class Hallucination(unittest.TestCase):
     def test_a_recogniser_stuck_in_a_loop_is_not_a_command(self):
         from praxis.voice.stt import looping
@@ -231,7 +311,7 @@ class Rules(unittest.TestCase):
     def test_a_wake_prefixed_goal_runs_and_is_repeated_back_so_a_mishearing_is_caught(self):
         self.assertEqual(self.c.hear("Praxis, fix the failing tests in calc.py"), "goal")
         self.assertEqual(self.a.calls, [("submit", "fix the failing tests in calc.py")])
-        self.assertIn("Understood. fix the failing tests in calc.py", self.spoken())
+        self.assertEqual(self.spoken(), "On it.")              # short: the screen already shows what was heard
 
     def test_after_it_speaks_there_is_a_short_hands_free_window(self):
         self.c.hear("praxis what's the status"); self.said.clear()
@@ -342,7 +422,7 @@ class Rules(unittest.TestCase):
         ev = lambda i, t, **p: types.SimpleNamespace(id=i, type=t, payload=p)
         self.c.on_events([ev(1, "model.try", provider="x"), ev(2, "plan.accepted", plan={"steps": [{}, {}]}),
                           ev(3, "goal.report", status="VERIFIED", evidence=[{"passed": True}])])
-        self.assertEqual([s for s, _ in self.said], ["Plan ready: 2 steps.", "Done. 1 check passed."])
+        self.assertEqual([s for s, _ in self.said], ["Done. 1 check passed."])
         self.said.clear(); self.c.on_events([ev(3, "goal.report", status="VERIFIED", evidence=[{"passed": True}])]); self.assertEqual(self.said, [])
         self.adv(2); self.assertEqual(self.c.hear("create hello two text file please"), "goal")           # the report opened the hands-free window
 

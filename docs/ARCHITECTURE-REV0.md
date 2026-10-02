@@ -1584,4 +1584,38 @@ Misses fail safe (an unrecognised "approve" never approves; "mute" sometimes bec
 A real room, real accents and a real microphone remain untested here. The break-it campaign finds *software* faults; it cannot replace a
 person using the product for a week.
 
-*End of Revision Zero (with addenda 38 to 44). Failures get logged, not hidden.*
+## 45. Status addendum — it converses, sounds better, and is calmer (2026-10-02)
+
+**Owner's first-run feedback on Windows:** the UI is a little much; the voice is poor; and when spoken to it "keeps verifying something",
+cannot hold a conversation, and is slow to respond.
+
+**45.1 Root cause of "keeps verifying".** Every utterance was a goal: it was planned, run and verified, so "how are you?" produced a plan
+and then "I finished, but I can't prove it". Fix: `praxis/voice/chat.py` classifies each utterance as a **task** (an imperative on this
+computer: create, fix, run, delete...) or **chat** (anything else). Small talk (greetings, how are you, thanks, who are you, what can you
+do, can you hear me, the time, the date, goodbye) is answered **instantly with no model**. Anything else goes to the fastest allowed model
+(new `chat` role: fast tiers and free providers first, restricted by your data class) with a spoken-style system prompt, the last six
+turns of memory, and a tidy step that removes markdown, code and secrets and bounds the length. If the model takes more than 3 s it says
+"One moment." once. Follow-ups work without the name for 15 s. "Hello, Praxis." and "What time is it, Praxis?" (name last) count for
+conversation but never for tasks, so "fix the bug in praxis" is not a command. Tasks are acknowledged with just "On it." and the plan is no
+longer narrated (only the final result, failures, blocked steps, and approvals are).
+Tested: classification of task vs chat, instant small talk with zero model calls, memory, follow-ups, graceful replies when the model fails,
+the holding line, and randomised conversations with a flaky model (a chat is never submitted as a goal and never answers an approval).
+**Not fixable in software:** latency of the model itself. Through the Claude/Codex/Droid command-line tools a reply takes several seconds
+(each call starts a process); a free Groq key or a local Ollama model answers in well under a second. `py -3 -m praxis voice` measures it.
+
+**45.2 Voice.** Default voice is now `jarvis-high` (a community British voice in the manner of the film assistant; 114 MB, downloaded on first
+run), with `en_GB-alan-medium` as the fallback and the operating-system voice only as a last resort; any Piper voice name works in `[voice]`
+(`en_US-ryan-high` is another natural option). Speech is now made and played **sentence by sentence** (the next sentence is synthesised while
+the current one plays), written text is made speakable ("hello.txt" becomes "hello dot txt", paths and symbols are not read out), and a poor
+voice is never a mystery: the screen says why when it fell back, and `~/.praxis/voice/voice.log` records the engine used. **`py -3 -m praxis voice`**
+checks every link on your machine: audio devices, which voice engine and how fast it makes speech, plays a sentence, records your microphone and
+shows what the recogniser heard, and times a chat reply. Measured here with `base.en` as the listener: all three candidate voices were
+intelligible; synthesis ran at 0.07x (medium) to 0.27x (high) real time. **I cannot hear them**, so which one sounds best to you is your call:
+change `voice = ` in `[voice]`.
+
+**45.3 Calmer screen.** Removed: the stage-light beam, the grid spokes, the corner brackets, most of the scanline and sweep brightness; the
+three-ring legend only appears while there is a plan; provider nodes are quiet dots and show a name only when they are being called, resting,
+blocked, nearly spent, or pointed at. Hardening found on the way: an exception inside a draw routine used to leave the painter open, which
+crashes the whole app (a hard segfault, not an error); painting is now wrapped so a bug there is an exception only.
+
+*End of Revision Zero (with addenda 38 to 45). Failures get logged, not hidden.*

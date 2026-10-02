@@ -157,7 +157,11 @@ class MainWindow(QMainWindow):
                                on_mute=lambda: setattr(self, "_mute_request", True))
                 self.voice = loop
                 self.voice_progress = ""
-                loop.say("PRAXIS online. Say my name, then tell me what you need.")
+                if getattr(loop, "voice_note", ""):
+                    self.voice_progress = f"Voice: {loop.voice_note}"       # never leave a poor voice a mystery
+                from ...voice.chat import _greeting
+                import datetime
+                loop.say(f"{_greeting(datetime.datetime.now())} I'm listening. Say my name, and ask me anything.")
             except VoiceUnavailable as e:
                 self.voice_error = str(e)
             except Exception as e:
@@ -264,6 +268,8 @@ class MainWindow(QMainWindow):
             if self.voice is not None and not self.voice.muted:
                 self.toggle_mute()
         if self.voice is not None:
+            if self.voice_progress.startswith("Voice: "):                # the voice is degraded: say why, once
+                self.core.set_caption(self.voice_progress[:200], "warn"); self.voice_progress = ""
             snap = self.voice.snapshot()
             self.core.set_voice(snap["state"], snap["level"], snap["speak_level"], snap["attentive"])
             if self.voice.unspoken:                      # it could not speak (no speaker, synthesis failed): say it on screen instead

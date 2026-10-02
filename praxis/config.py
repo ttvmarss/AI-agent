@@ -44,12 +44,14 @@ DEFAULTS = {
     "role_tiers": {
         "planner": ["balanced", "best", "fast", "free", "local"], "replanner": ["balanced", "best", "fast", "free", "local"],
         "critic": ["best", "balanced", "fast", "free", "local"], "delegate": ["balanced", "fast", "best"],
+        "chat": ["fast", "free", "local", "balanced"],      # conversation wants the quickest model, not the strongest
     },
     "hardware": {"vram_gb": 0, "ram_gb": 0, "gpu_name": "", "ram_bw_gbps": 0, "gpu_bw_gbps": 0},
     "roles": {
         "planner": ["claude", "codex", "droid", "ollama", "ollama-cloud", "groq", "cerebras", "gemini", "mistral", "nvidia", "openrouter"],
         "replanner": ["claude", "codex", "droid", "ollama", "ollama-cloud", "groq", "cerebras", "gemini", "mistral", "nvidia", "openrouter"],
         "critic": ["codex", "claude", "droid", "groq", "cerebras", "ollama-cloud", "ollama", "gemini", "mistral", "nvidia", "openrouter"],
+        "chat": ["groq", "cerebras", "gemini", "mistral", "ollama-cloud", "ollama", "claude", "nvidia", "openrouter", "codex", "droid"],
     },
     # strategy: "auto" = quality first, cheapest within 0.05 of the best once measured | "frugal" = local, then free cloud,
     # then subscription models small to large, escalating only when a cheaper model fails verification (use less Claude)
@@ -60,8 +62,8 @@ DEFAULTS = {
     "privacy": {"data_class": "project"},
     "sandbox": {"backend": "auto"},   # auto | bwrap | unshare | docker | none
     # Hands-free voice (pip install faster-whisper piper-tts sounddevice). User config only: a project folder cannot touch it.
-    "voice": {"enabled": True, "wake_word": "praxis", "stt_model": "base.en", "voice": "en_GB-alan-medium", "speak": True,
-              "attentive_s": 10.0, "approval_s": 60.0, "input_device": ""},
+    "voice": {"enabled": True, "wake_word": "praxis", "stt_model": "base.en", "voice": "jarvis-high", "speak": True,
+              "attentive_s": 15.0, "approval_s": 60.0, "input_device": "", "chat": True},
 
 }
 

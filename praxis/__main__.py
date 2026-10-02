@@ -217,6 +217,7 @@ def main(argv=None):
         (["--ping-all"], {"action": "store_true", "help": "ping every configured model (costs a little usage)"}))
     add("models", (["--recommend"], {"action": "store_true", "help": "what to install for this hardware"}))
     add("hardware")
+    add("voice")
     add("pull", (["tag"], {}), (["--yes"], {"action": "store_true", "help": "do not ask for confirmation"}))
     add("bench", (["--trials"], {"type": int, "default": 1}), (["--providers"], {"default": ""}),
         (["--all-ollama"], {"action": "store_true", "help": "benchmark every installed Ollama model that fits"}),
@@ -238,6 +239,9 @@ def main(argv=None):
     stack = build_stack(ws)
     if a.cmd == "doctor":
         return cmd_doctor(stack, ws, a.ping, a.ping_all)
+    if a.cmd == "voice":
+        from .desktop.voice_check import run as voice_check
+        return voice_check(stack, stack.cfg.get("voice", {}))
     if a.cmd == "hardware":
         prof = profile_from_config(stack.cfg["hardware"], detect_hardware())
         print(hardware_report(prof)); print()

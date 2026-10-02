@@ -179,6 +179,13 @@ class Controller:
         """data_class: 'private' (local only) | 'project' (+ trusted cloud) | 'open' (+ free tiers that may train)."""
         return self._launch(lambda ex: ex.run(text), "private" if private else (data_class or self.data_class), no_critic)
 
+    def chat(self, messages):
+        """A plain conversational reply from the fastest model the current data class allows. Not a goal: nothing is planned or run."""
+        st = self._stack
+        if st is None:
+            raise RuntimeError("no models yet")
+        return st.router.call("chat", messages, self.effective_data_class())
+
     def resume(self):
         if not self.unfinished():
             return False

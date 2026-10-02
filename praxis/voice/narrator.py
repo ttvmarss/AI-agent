@@ -17,14 +17,10 @@ def clean(text, limit=140):
 def for_event(etype, p):
     """-> (sentence or None, urgent). Only milestones are spoken. Any payload shape is survivable."""
     p = p if isinstance(p, dict) else {}
-    if etype == "plan.accepted":
-        plan = p.get("plan")
-        steps = plan.get("steps") if isinstance(plan, dict) else None
-        n = len(steps) if isinstance(steps, (list, tuple)) else 0
-        s = f"Plan ready: {n} step{'s' if n != 1 else ''}."
+    if etype == "plan.accepted":                          # the plan itself is not narrated: only a warning is worth interrupting for
         if p.get("tainted"):
-            s += " It came from file contents, so I'm limiting it to reversible actions."
-        return s, False
+            return "Heads up: that plan came from file contents, so I'm limiting it to reversible actions.", False
+        return None, False
     if etype == "escalation":
         return "That didn't verify. Trying a stronger model.", False
     if etype == "plan.rejected":

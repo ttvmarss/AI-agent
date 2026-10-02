@@ -56,6 +56,10 @@ up without the name. *"Praxis, stop"* cancels at once. *"Praxis, status"*, *"fru
 enough only for mild actions; anything risky needs the word "approve", and every approval must start with its name so a television can't approve for you; silence is a denial.** If a microphone or model is missing it says
 why on screen and shows a one-line typing field instead. The microphone is deaf while it speaks, so it never answers itself.
 
+**It converses.** Questions and small talk are answered ("how are you?", "what time is it?", "explain what a mutex is"); only imperatives
+("create", "fix", "run", "delete"...) become tasks that are planned, run and verified. `py -3 -m praxis voice` tests your microphone, speaker,
+voice and the reply speed. The voice is `jarvis-high` by default (change `voice =` in `[voice]`).
+
 ## Run
 
 ```

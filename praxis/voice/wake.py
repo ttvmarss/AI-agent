@@ -36,6 +36,16 @@ def split_wake(text, wake="praxis", aliases=ALIASES):
     return False, text
 
 
+def split_trailing_wake(text, wake="praxis", aliases=ALIASES):
+    """"Hello, Praxis." / "What time is it, Praxis?" -> (True, "Hello" / "What time is it"). The name must be the LAST word and match exactly
+    (no fuzzy matching here), and only short sentences count: the caller still decides whether the rest is something it may act on."""
+    text = (text or "").replace("\u2019", "'").strip()
+    words = [(m.group(0).lower(), m.start()) for m in re.finditer(r"[A-Za-z0-9']+", text)]
+    if 2 <= len(words) <= 9 and (words[-1][0] == wake or words[-1][0] in aliases):
+        return True, text[:words[-1][1]].rstrip(" ,:;!?.-\u2014")
+    return False, text
+
+
 @dataclass
 class Intent:
     kind: str          # goal | stop | approve | deny | confirm_risky | status | resume | data | frugal | mute | wake_only | unknown

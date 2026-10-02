@@ -10,15 +10,16 @@ Rules that hold whatever the recogniser hears:
 import threading
 import time
 
-from . import narrator, wake
+from . import narrator, wake, chat as chat_mod
 
 PHANTOM = {"thank you", "thanks", "thanks for watching", "you", "bye", "okay", "ok", "hmm", "uh", "um", "the", "so", "yeah"}
 PROMPT_DELAY = 0.8
 
 
 class Conductor:
-    def __init__(self, actions, say, clock=time.monotonic, wake_word="praxis", attentive_s=10.0, approval_s=60.0, log=None):
+    def __init__(self, actions, say, clock=time.monotonic, wake_word="praxis", attentive_s=15.0, approval_s=60.0, log=None, chat=None):
         self.a, self.say, self.clock = actions, say, clock
+        self.chat, self.chat_lock, self.chatting = chat, threading.Lock(), 0
         self.wake_word, self.attentive_s, self.approval_s = wake_word, attentive_s, approval_s
         self.log = log or (lambda *_: None)
         self.lock = threading.RLock()
@@ -40,6 +41,10 @@ class Conductor:
             if norm == self.last_text and now - self.last_at < 4.0:
                 return "ignored: repeat"
             heard_wake, rest = wake.split_wake(text, self.wake_word)
+            if not heard_wake and self.chat is not None:           # "Hello, Praxis." / "What time is it, Praxis?"
+                tw, trest = wake.split_trailing_wake(text, self.wake_word)
+                if tw and chat_mod.classify(trest) == "chat":
+                    heard_wake, rest = True, trest
             pending = self.a.pending()
             approving = bool(pending)
             busy = self.a.state() in ("working", "stopping")
@@ -116,6 +121,10 @@ class Conductor:
             return "frugal"
         if k == "goal":
             words = it.arg.split()
+            if self.chat is not None and chat_mod.classify(it.arg) == "chat" and (heard_wake or len(words) >= 2):
+                self._converse(it.arg)                          # a question or small talk: answer it, don't plan and verify it
+                self._attend(now)
+                return "chat"
             if len(words) < (2 if heard_wake else 3) or len(it.arg) > 600:
                 if heard_wake:
                     self.say("Sorry, I didn't catch that.")
@@ -126,12 +135,35 @@ class Conductor:
             if self.a.pending():
                 return "ignored: approval pending"
             if self.a.submit(it.arg):
-                self.say(f"Understood. {narrator.clean(it.arg, 110)}.")
+                self.say("On it.")
                 self._attend(now)
                 return "goal"
             self.say("I can't start that right now.")
             return "refused"
         return "ignored"
+
+    def _converse(self, text):
+        """Answer in words, off the listening thread. Small talk is instant; anything else asks a model, and if that takes a while
+        it says so once rather than leaving you wondering."""
+        def work():
+            with self.chat_lock:
+                self.chatting += 1
+                timer = threading.Timer(3.0, lambda: self.say("One moment."))
+                timer.daemon = True
+                timer.start()
+                try:
+                    reply = self.chat.reply(text)
+                except Exception as e:
+                    self.log("chat-error", type(e).__name__, str(e))
+                    reply = "Sorry, I lost my train of thought. Say that again?"
+                finally:
+                    timer.cancel()
+                    self.chatting -= 1
+                if reply:
+                    self.say(reply)
+                    with self.lock:
+                        self._attend(self.clock())
+        threading.Thread(target=work, daemon=True, name="praxis-chat").start()
 
     def _attend(self, now):
         self.attentive_until = max(self.attentive_until, now + self.attentive_s)

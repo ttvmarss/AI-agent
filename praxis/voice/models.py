@@ -7,8 +7,18 @@ from .tts import voice_dir
 PIPER_URL = "https://huggingface.co/rhasspy/piper-voices/resolve/main/{lang}/{locale}/{name}/{quality}/{voice}.{ext}"
 
 
+# Voices that are not in the main Piper collection. "jarvis" is a community British voice in the manner of the film assistant
+# (jgkawell/jarvis on Hugging Face); the rest come from rhasspy/piper-voices.
+CUSTOM = {
+    "jarvis-high": "https://huggingface.co/jgkawell/jarvis/resolve/main/en/en_GB/jarvis/high/jarvis-high",
+    "jarvis-medium": "https://huggingface.co/jgkawell/jarvis/resolve/main/en/en_GB/jarvis/medium/jarvis-medium",
+}
+
+
 def piper_files(voice):
     """en_GB-alan-medium -> the two URLs to fetch."""
+    if voice in CUSTOM:
+        return [(voice + ".onnx", CUSTOM[voice] + ".onnx"), (voice + ".onnx.json", CUSTOM[voice] + ".onnx.json")]
     locale, name, quality = voice.split("-")
     lang = locale.split("_")[0]
     fmt = lambda ext: PIPER_URL.format(lang=lang, locale=locale, name=name, quality=quality, voice=voice, ext=ext)

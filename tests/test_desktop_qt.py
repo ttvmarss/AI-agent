@@ -463,8 +463,16 @@ class OneScreen(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(ws, "a.txt")))
         said = " | ".join(win.voice.voice.said)
         self.assertTrue(pump(lambda: "Done" in " | ".join(win.voice.voice.said), 5), said)
-        self.assertIn("Understood", " | ".join(win.voice.voice.said))
+        self.assertIn("On it.", " | ".join(win.voice.voice.said))
         self.assertFalse(win.prompt.isVisible())                                  # and at no point was there a chat box
+
+    def test_talking_to_it_is_a_conversation_not_a_task(self):
+        # Reported by the owner: "when I talk to it, it keeps verifying something". Small talk and questions are now answered, not planned.
+        win, ctl, ws = self.voiced("Praxis, how are you?")
+        utterance(win.voice)
+        self.assertTrue(pump(lambda: any("nominal" in s for s in win.voice.voice.said), 6), win.voice.voice.said)
+        self.assertEqual(ctl.state, "idle"); self.assertEqual(win.core.title, "READY")          # nothing was planned, run or verified
+        self.assertFalse([e for e in ctl.poll().events if e.type.startswith(("plan.", "goal."))])
 
     def test_speech_without_the_wake_word_does_nothing_at_all(self):
         win, ctl, ws = self.voiced("create a.txt containing 1")
@@ -472,7 +480,7 @@ class OneScreen(unittest.TestCase):
         self.assertTrue(pump(lambda: win.voice.transcripts, 5))
         pump(lambda: False, 0.6)
         self.assertEqual(ctl.state, "idle"); self.assertFalse(os.path.exists(os.path.join(ws, "a.txt")))
-        self.assertEqual(win.voice.voice.said, ["PRAXIS online. Say my name, then tell me what you need."][:len(win.voice.voice.said)])
+        self.assertNotIn("On it.", " | ".join(win.voice.voice.said))        # only the greeting was ever said
 
     def test_what_it_heard_is_shown_so_a_mishearing_is_visible(self):
         win, ctl, ws = self.voiced("Praxis, status please")

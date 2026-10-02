@@ -71,7 +71,7 @@ class CoreView(QWidget):
         self.setMouseTracking(True)
         self.ui, self.mono = fonts()
         self.mode, self.progress, self.title, self.subtitle = "starting", 0.0, "STARTING", ""
-        self.nodes, self.active, self._hit = [], "", []
+        self.nodes, self.active, self._hit, self._hover = [], "", [], ""
         self.pipeline = dict(plan="none", steps=[], checks=[], sealed=False)
         self.t = 0.0
         self.quality = P.Quality()
@@ -245,8 +245,10 @@ class CoreView(QWidget):
         g = self._geo()
         self.field.tilt_target = [max(-0.35, min(0.35, (e.position().y() - g["cy"]) / max(g["h"], 1) * 0.8)),
                                   max(-0.5, min(0.5, (e.position().x() - g["cx"]) / max(g["w"], 1) * 1.0))]
+        self._hover = ""
         for name, pt, r, tip in self._hit:
             if (e.position() - pt).manhattanLength() < r * 1.6:
+                self._hover = name
                 QToolTip.showText(e.globalPosition().toPoint(), tip, self)
                 return
         QToolTip.hideText()
@@ -318,54 +320,57 @@ class CoreView(QWidget):
         if w < 80 or h < 80:
             return
         p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
-        p.setRenderHint(QPainter.SmoothPixmapTransform)
-        g = self._geo()
-        tint, mixv = self.field.tint_colour()
-        base = QLinearGradient(0, 0, 0, h)                       # its own deep-space base: additive glow must blend onto dark,
-        base.setColorAt(0.0, QColor(6, 16, 27)); base.setColorAt(1.0, QColor(4, 7, 13))   # whatever widget it is placed in
-        p.fillRect(self.rect(), base)
-        self._stars(p, g)
-        self._aura(p, g, tint, mixv)
-        self._orbit_and_links(p, g)
-        self._projector(p, g, tint)
-        # everything that glows goes into one buffer, which is then bloomed
-        if self._buf is None or self._buf.size() != self.size():
-            self._buf = QImage(self.size(), QImage.Format_ARGB32_Premultiplied)
-        buf = self._buf
-        buf.fill(Qt.transparent)
-        q = QPainter(buf)
-        q.setRenderHint(QPainter.Antialiasing)
-        q.setRenderHint(QPainter.SmoothPixmapTransform)
-        q.setCompositionMode(QPainter.CompositionMode_Plus)
-        self._galaxy(q, g, tint, mixv)
-        self._streams(q, g)
-        self._ripples(q, g)
-        q.end()
-        p.setCompositionMode(QPainter.CompositionMode_Plus)
-        flick = 1.0 if REDUCED else H.flicker(self.t)
-        p.setOpacity(flick)
-        p.drawImage(0, 0, buf)
-        if not REDUCED and self.quality.level < 2:                # the ghost: a faint second image, as light in air has
-            gx, gy = H.ghost_offset(self.t)
-            p.setOpacity(0.16 * flick); p.drawImage(QPointF(gx, gy), buf)
-        gl = (False, 0.0, 0.0) if REDUCED else H.glitch(self.t)
-        if gl[0]:                                                 # a rare horizontal tear: one band shifted sideways
-            y0 = int(gl[1] * h); band = max(6, h // 28)
-            p.setOpacity(0.8); p.drawImage(QPointF(gl[2], y0), buf, QRectF(0, y0, w, band))
-        p.setOpacity(flick)
-        if self.quality.level < 2:                                # bloom: two blurred copies added back on top
-            small = buf.scaled(max(8, w // 4), max(8, h // 4), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
-            p.setOpacity(0.9); p.drawImage(QRectF(0, 0, w, h), small)
-            tiny = small.scaled(max(4, w // 14), max(4, h // 14), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
-            p.setOpacity(0.75); p.drawImage(QRectF(0, 0, w, h), tiny)
-        p.setOpacity(1.0)
-        self._sweep(p, g, tint)
-        p.setCompositionMode(QPainter.CompositionMode_SourceOver)
-        p.drawPixmap(0, 0, self._overlay(w, h))
-        self._nodes(p, g)
-        self._hud(p, g)
-        p.end()
+        try:
+            p.setRenderHint(QPainter.Antialiasing)
+            p.setRenderHint(QPainter.SmoothPixmapTransform)
+            g = self._geo()
+            tint, mixv = self.field.tint_colour()
+            base = QLinearGradient(0, 0, 0, h)                       # its own deep-space base: additive glow must blend onto dark,
+            base.setColorAt(0.0, QColor(6, 16, 27)); base.setColorAt(1.0, QColor(4, 7, 13))   # whatever widget it is placed in
+            p.fillRect(self.rect(), base)
+            self._stars(p, g)
+            self._aura(p, g, tint, mixv)
+            self._orbit_and_links(p, g)
+            self._projector(p, g, tint)
+            # everything that glows goes into one buffer, which is then bloomed
+            if self._buf is None or self._buf.size() != self.size():
+                self._buf = QImage(self.size(), QImage.Format_ARGB32_Premultiplied)
+            buf = self._buf
+            buf.fill(Qt.transparent)
+            q = QPainter(buf)
+            q.setRenderHint(QPainter.Antialiasing)
+            q.setRenderHint(QPainter.SmoothPixmapTransform)
+            q.setCompositionMode(QPainter.CompositionMode_Plus)
+            self._galaxy(q, g, tint, mixv)
+            self._streams(q, g)
+            self._ripples(q, g)
+            q.end()
+            p.setCompositionMode(QPainter.CompositionMode_Plus)
+            flick = 1.0 if REDUCED else H.flicker(self.t)
+            p.setOpacity(flick)
+            p.drawImage(0, 0, buf)
+            if not REDUCED and self.quality.level < 2:                # the ghost: a faint second image, as light in air has
+                gx, gy = H.ghost_offset(self.t)
+                p.setOpacity(0.16 * flick); p.drawImage(QPointF(gx, gy), buf)
+            gl = (False, 0.0, 0.0) if REDUCED else H.glitch(self.t)
+            if gl[0]:                                                 # a rare horizontal tear: one band shifted sideways
+                y0 = int(gl[1] * h); band = max(6, h // 28)
+                p.setOpacity(0.8); p.drawImage(QPointF(gl[2], y0), buf, QRectF(0, y0, w, band))
+            p.setOpacity(flick)
+            if self.quality.level < 2:                                # bloom: two blurred copies added back on top
+                small = buf.scaled(max(8, w // 4), max(8, h // 4), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+                p.setOpacity(0.9); p.drawImage(QRectF(0, 0, w, h), small)
+                tiny = small.scaled(max(4, w // 14), max(4, h // 14), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+                p.setOpacity(0.75); p.drawImage(QRectF(0, 0, w, h), tiny)
+            p.setOpacity(1.0)
+            self._sweep(p, g, tint)
+            p.setCompositionMode(QPainter.CompositionMode_SourceOver)
+            p.drawPixmap(0, 0, self._overlay(w, h))
+            self._nodes(p, g)
+            self._hud(p, g)
+        finally:
+            if p.isActive():
+                p.end()      # a bug while painting must never leave a painter open: that is a hard crash, not an error
         if self.quality.record((time.perf_counter() - t0) * 1000.0):
             self.field.resize(self.quality.n)
 
@@ -378,27 +383,16 @@ class CoreView(QWidget):
         col = rgb(tint)
         p.save()
         p.setCompositionMode(QPainter.CompositionMode_Plus)
-        beam = QLinearGradient(0, cy, 0, g["top"])
-        c0 = QColor(col); c0.setAlpha(15); c1 = QColor(col); c1.setAlpha(0)
-        beam.setColorAt(0.0, c0); beam.setColorAt(1.0, c1)
-        p.setPen(Qt.NoPen); p.setBrush(beam)
-        for k in (1.0, 0.78, 0.56):                             # nested cones: a soft edge instead of a hard stage-light trapezoid
-            p.drawPolygon(QPolygonF([QPointF(cx - rx * 0.92 * k, cy), QPointF(cx - rx * 0.5 * k, g["top"]),
-                                     QPointF(cx + rx * 0.5 * k, g["top"]), QPointF(cx + rx * 0.92 * k, cy)]))
-        rings, spokes = H.grid_lines(6, 18, 0.0 if REDUCED else self.t)
+        p.setPen(Qt.NoPen)
+        rings, spokes = H.grid_lines(3, 18, 0.0 if REDUCED else self.t)
         for f in rings:
-            a = int(70 * H.ring_alpha(f))
+            a = int(46 * H.ring_alpha(f))
             if a <= 0:
                 continue
             c = QColor(col); c.setAlpha(a)
             p.setPen(QPen(c, 1.0)); p.setBrush(Qt.NoBrush)
             p.drawEllipse(QPointF(cx, cy), rx * f, ry * f)
-        c = QColor(col); c.setAlpha(34)
-        p.setPen(QPen(c, 1.0))
-        for ang in spokes:
-            p.drawLine(QPointF(cx + math.cos(ang) * rx * 0.12, cy + math.sin(ang) * ry * 0.12),
-                       QPointF(cx + math.cos(ang) * rx, cy + math.sin(ang) * ry))
-        c = QColor(col); c.setAlpha(150)
+        c = QColor(col); c.setAlpha(80)
         p.setPen(QPen(c, 1.6)); p.drawEllipse(QPointF(cx, cy), rx * 0.98, ry * 0.98)       # the emitter's lip
         p.restore()
 
@@ -408,7 +402,7 @@ class CoreView(QWidget):
             return
         f, strength = H.sweep(self.t)
         y = g["top"] + (g["h"] - g["top"] - g["bot"]) * f
-        col = rgb(tint); col.setAlpha(int(46 * strength))
+        col = rgb(tint); col.setAlpha(int(12 * strength))
         grad = QLinearGradient(0, y - 14, 0, y + 14)
         z = QColor(col); z.setAlpha(0)
         grad.setColorAt(0.0, z); grad.setColorAt(0.5, col); grad.setColorAt(1.0, z)
@@ -422,7 +416,7 @@ class CoreView(QWidget):
             pm = QPixmap(w, h)
             pm.fill(Qt.transparent)
             q = QPainter(pm)
-            q.setPen(QPen(QColor(120, 170, 255, 9), 1))
+            q.setPen(QPen(QColor(120, 170, 255, 5), 1))
             for y in range(0, h, 3):
                 q.drawLine(0, y, w, y)
             vg = QRadialGradient(w / 2.0, h / 2.0, max(w, h) * 0.62)
@@ -724,13 +718,6 @@ class CoreView(QWidget):
                 ang = -math.pi / 2 + (self.t * 0.4) % math.tau
                 p.setPen(QPen(qc("warn", 220), 1.6, Qt.SolidLine, Qt.RoundCap))
                 p.drawLine(pt, QPointF(pt.x() + math.cos(ang) * nr * 0.72, pt.y() + math.sin(ang) * nr * 0.72))
-            label = nd["family"] + (f"  x{len(nd['models'])}" if len(nd["models"]) > 1 else "")
-            gap = nr + 12
-            x0 = pt.x() - gap - 130 if side < 0 else pt.x() + gap
-            al = Qt.AlignRight if side < 0 else Qt.AlignLeft
-            p.setFont(self._font(self.ui, 9, QFont.DemiBold))
-            p.setPen(qc("text" if not (dim or nd["blocked"]) else "dim"))
-            p.drawText(QRectF(x0, pt.y() - 17, 130, 16), al | Qt.AlignVCenter, label)
             sub, subcol = "", "dim"
             if nd["cooling_s"]:
                 sub, subcol = f"resting {nd['cooling_s'] // 60 + 1}m", "warn"
@@ -742,6 +729,16 @@ class CoreView(QWidget):
                 sub, subcol = f"{nd['pressure'] * 100:.0f}% spent", "warn"
             elif active:
                 sub, subcol = "calling...", "accent"
+            if not (active or sub or nd["family"] == self._hover):          # calm: a name is shown only when it matters or you point at it
+                self._hit.append((nd["family"], pt, nr, self._tip(nd)))
+                continue
+            label = nd["family"] + (f"  x{len(nd['models'])}" if len(nd["models"]) > 1 else "")
+            gap = nr + 12
+            x0 = pt.x() - gap - 130 if side < 0 else pt.x() + gap
+            al = Qt.AlignRight if side < 0 else Qt.AlignLeft
+            p.setFont(self._font(self.ui, 9, QFont.DemiBold))
+            p.setPen(qc("text" if not (dim or nd["blocked"]) else "dim"))
+            p.drawText(QRectF(x0, pt.y() - 17, 130, 16), al | Qt.AlignVCenter, label)
             if sub:
                 p.setFont(self._font(self.ui, 8)); p.setPen(qc(subcol))
                 p.drawText(QRectF(x0, pt.y() - 1, 130, 14), al | Qt.AlignVCenter, sub)
@@ -759,11 +756,6 @@ class CoreView(QWidget):
         p.setCompositionMode(QPainter.CompositionMode_SourceOver)
         w, h = g["w"], g["h"]
         cx = g["cx"]
-        p.setPen(QPen(qc("line2", 150), 1.4)); p.setBrush(Qt.NoBrush)      # corner brackets
-        L, m = 16, 8
-        for sx, sy in ((m, m), (w - m, m), (m, h - m), (w - m, h - m)):
-            dx, dy = (L if sx < w / 2 else -L), (L if sy < h / 2 else -L)
-            p.drawLine(QPointF(sx, sy), QPointF(sx + dx, sy)); p.drawLine(QPointF(sx, sy), QPointF(sx, sy + dy))
         p.setFont(self._font(self.mono, 10, QFont.Bold, 6))                  # wordmark, like the reference's J.A.R.V.I.S.
         self._glow_text(p, QRectF(0, 10, w, 18), "P.R.A.X.I.S.", C["accent"], Qt.AlignCenter, 235)
         key = MODE_COLOR.get(self.mode, "accent")
@@ -776,11 +768,12 @@ class CoreView(QWidget):
         lf = self._font(self.mono, 8, QFont.Bold, 1.5)
         p.setFont(lf)
         fm = QFontMetricsF(lf)
-        items = self.legend()
+        items = self.legend() if (self.pipeline["plan"] != "none" or self.pipeline["steps"] or self.pipeline["checks"]) else []
         widths = [14 + fm.horizontalAdvance(f"{n} {t}") + 18 for n, t, _ in items]
         x = cx - sum(widths) / 2.0
-        p.setPen(Qt.NoPen); p.setBrush(QColor(3, 8, 14, 150))
-        p.drawRoundedRect(QRectF(x - 8, 60, sum(widths) + 12, 18), 9, 9)
+        if items:
+            p.setPen(Qt.NoPen); p.setBrush(QColor(3, 8, 14, 150))
+            p.drawRoundedRect(QRectF(x - 8, 60, sum(widths) + 12, 18), 9, 9)
         for (name, text, key), wd in zip(items, widths):
             col = QColor(C[key])
             p.setPen(Qt.NoPen); p.setBrush(QColor(col.red(), col.green(), col.blue(), 235 if key != "dim" else 110))

@@ -123,6 +123,11 @@ what it understood, works, and tells you the result. Other things to say: *"Prax
 say **"Praxis, approve"** (risky actions need that exact word; "Praxis, yes" is enough only for mild ones; your name is always required to approve, so a TV can't) or **"deny"**; silence denies. If it mishears you, the words it heard are shown
 on screen. No microphone or model? It tells you why and gives you a one-line typing field. Headphones help if your speakers are loud.
 
+**Check it works:** `py -3 -m praxis voice` tests your speaker, voice, microphone and how fast a model replies, and says which link is the
+problem. **Talk naturally:** questions and small talk get answers ("Praxis, how are you?", "what time is it?", "explain what a mutex is");
+asking it to *do* something ("create", "fix", "run"...) starts a task, which it plans, does and checks. For quick replies add a free Groq
+key (`py -3 -m praxis keys set groq`) or install Ollama: replies through the Claude/Codex/Droid tools take several seconds each.
+
 ## 6. How to use it safely
 
 * **STOP (Esc, or Ctrl+.)** is always live. It kills in-flight model calls, stops before the next step, and **restores the workspace** to how it was before the goal.

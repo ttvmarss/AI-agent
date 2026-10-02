@@ -37,6 +37,9 @@ class ControllerActions:
         if self.on_mute:
             self.on_mute()
 
+    def chat(self, messages):
+        return self.c.chat(messages)
+
     def status_text(self):
         try:
             return describe_status(self.c.view_now(), self.c.state, self.c.pending_approvals())

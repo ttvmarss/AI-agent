@@ -5,7 +5,8 @@ import queue
 import threading
 import time
 
-from . import audio
+from . import audio, tts
+from .chat import Chat
 from .conductor import Conductor
 
 MAX_SPOKEN = 420          # characters of one spoken sentence
@@ -14,12 +15,13 @@ TAIL_S = 0.55          # stay deaf this long after speech ends (room echo)
 
 
 class VoiceLoop:
-    def __init__(self, actions, recognizer, mic, speaker, voice, wake_word="praxis", speak=True, attentive_s=10.0,
-                 approval_s=60.0, segmenter=None, log=None):
+    def __init__(self, actions, recognizer, mic, speaker, voice, wake_word="praxis", speak=True, attentive_s=15.0,
+                 approval_s=60.0, segmenter=None, log=None, chat=True):
         self.recognizer, self.mic, self.speaker, self.voice, self.speak_on = recognizer, mic, speaker, voice, speak
         self.log = log or (lambda *_: None)
         self.seg = segmenter or audio.Segmenter()
-        self.conductor = Conductor(actions, self.say, wake_word=wake_word, attentive_s=attentive_s, approval_s=approval_s, log=self.log)
+        brain = Chat(actions.chat) if chat and getattr(actions, "chat", None) else None
+        self.conductor = Conductor(actions, self.say, wake_word=wake_word, attentive_s=attentive_s, approval_s=approval_s, log=self.log, chat=brain)
         self.muted, self.speaking, self.thinking, self.deaf_until = False, False, False, 0.0
         self.level, self.speak_level, self._env, self._env_t0 = 0.0, 0.0, [], 0.0
         self.transcripts = []                 # (time, text, what it did): the log you read when something is odd
@@ -29,6 +31,8 @@ class VoiceLoop:
         self._ttscv = threading.Condition()
         self._stop_speaking, self._closing = threading.Event(), False
         self._threads = []
+        self._executor = None
+        self.engine, self.voice_note = "", ""
 
     # ---- lifecycle ------------------------------------------------------------------------------------------------------
     def start(self):
@@ -42,6 +46,8 @@ class VoiceLoop:
         self.mic.stop()
         with self._ttscv:
             self._ttscv.notify_all()
+        if self._executor is not None:
+            self._executor.shutdown(wait=False, cancel_futures=True)
 
     def _on_chunk(self, chunk):
         self.last_chunk = time.monotonic()
@@ -81,7 +87,7 @@ class VoiceLoop:
             return "offline"
         if self.speaking:
             return "speaking"
-        if self.thinking:
+        if self.thinking or self.conductor.chatting:
             return "thinking"
         return "hearing" if self.seg.in_speech else "listening"
 
@@ -119,27 +125,54 @@ class VoiceLoop:
                 if self._closing:
                     return
                 text = self._ttsq.pop(0)
-            try:
-                pcm, rate = self.voice.synth(text)
-            except Exception as e:
-                self.last_error = f"speech synthesis failed: {type(e).__name__}: {e}"
-                self.unspoken = text                          # the screen shows what it could not say aloud
-                self.log("tts-error", self.last_error)
-                continue
-            self._stop_speaking.clear()
-            self._env, self._env_t0 = audio.envelope(pcm, rate), time.monotonic()
-            self.speaking = True
-            self.seg.reset()
-            try:
-                self.speaker.play(pcm, rate, self._stop_speaking)
-            except Exception as e:
-                self.last_error = f"playback failed: {type(e).__name__}: {e}"
-                self.unspoken = text
-                self.log("play-error", self.last_error)
-            finally:
-                self.speaking, self._env = False, []
-                self.deaf_until = time.monotonic() + TAIL_S
+            self._speak(text)
+
+    def _speak(self, text):
+        """Say one utterance sentence by sentence: the next sentence is being synthesised while the current one plays, so speech
+        starts after the first sentence is made, not the whole answer."""
+        sentences = tts.split_sentences(tts.speakable(text))
+        if not sentences or not sentences[0]:
+            return
+        pool = self._pool()
+        nxt = pool.submit(self.voice.synth, sentences[0])
+        try:
+            for i in range(len(sentences)):
+                try:
+                    pcm, rate = nxt.result(timeout=60)
+                except Exception as e:
+                    self.last_error = f"speech synthesis failed: {type(e).__name__}: {e}"
+                    self.unspoken = text                  # the screen shows what it could not say aloud
+                    self.log("tts-error", self.last_error)
+                    return
+                nxt = pool.submit(self.voice.synth, sentences[i + 1]) if i + 1 < len(sentences) else None
+                if self._stop_speaking.is_set() and i:
+                    return
+                self._stop_speaking.clear()
+                self._env, self._env_t0 = audio.envelope(pcm, rate), time.monotonic()
+                self.speaking = True
                 self.seg.reset()
+                try:
+                    self.speaker.play(pcm, rate, self._stop_speaking)
+                except Exception as e:
+                    self.last_error = f"playback failed: {type(e).__name__}: {e}"
+                    self.unspoken = text
+                    self.log("play-error", self.last_error)
+                    return
+                finally:
+                    self.speaking, self._env = False, []
+                    self.deaf_until = time.monotonic() + TAIL_S
+                    self.seg.reset()
+                if self._closing:
+                    return
+        finally:
+            if nxt is not None:
+                nxt.cancel()
+
+    def _pool(self):
+        if self._executor is None:
+            from concurrent.futures import ThreadPoolExecutor
+            self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="voice-synth")
+        return self._executor
 
     def _ticker(self):
         while not self._closing:

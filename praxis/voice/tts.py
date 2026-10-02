@@ -1,6 +1,7 @@
 """Speech synthesis. Every engine returns PCM so the app plays it itself: it then knows when speech ends (no echo) and can
 show the real loudness envelope on the core. Order of preference: Piper (neural, local) -> the OS voice."""
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -13,6 +14,40 @@ def voice_dir():
     return os.path.join(home(), "voice")
 
 
+_EXT = r"txt|py|md|json|js|ts|tsx|csv|html|css|toml|yaml|yml|log|exe|bat|ps1|sh|cfg|ini|xml|pdf|docx|xlsx|png|jpg|zip"
+
+
+def speakable(text):
+    """Make written text pleasant to say: "hello.txt" -> "hello dot txt", no markup, no stray symbols, no paths read letter by letter."""
+    t = str(text or "")
+    t = re.sub(r"[`*_#>]+", " ", t)
+    t = re.sub(r"(?:[A-Za-z]:)?(?:[\\/][\w.\-]+){3,}", "that file path", t)
+    t = re.sub(rf"(\w)\.({_EXT})\b", r"\1 dot \2", t, flags=re.I)
+    t = t.replace("&", " and ").replace("->", " to ").replace("=>", " to ").replace("%", " percent")
+    t = re.sub(r"\s*[/\\|]\s*", " ", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
+
+
+def split_sentences(text, min_len=24, max_len=220):
+    """Sentences for pipelined synthesis: the first is spoken while the rest are still being made. Tiny pieces are merged so
+    the voice does not sound clipped; a very long sentence is cut at a comma."""
+    parts = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text.strip()) if s.strip()]
+    out = []
+    for s in parts:
+        while len(s) > max_len:
+            cut = s.rfind(",", 0, max_len)
+            cut = cut if cut > 40 else s.rfind(" ", 0, max_len)
+            cut = cut if cut > 0 else max_len
+            out.append(s[:cut + 1].strip()); s = s[cut + 1:].strip()
+        if s:
+            if out and len(out[-1]) < min_len:
+                out[-1] += " " + s
+            else:
+                out.append(s)
+    return out or [text.strip()]
+
+
 class Voice:
     name = "none"
 
@@ -21,7 +56,7 @@ class Voice:
 
 
 class PiperVoice(Voice):
-    def __init__(self, voice="en_GB-alan-medium", root=None, speed=1.0):
+    def __init__(self, voice="jarvis-high", root=None, speed=1.0):
         self.name = f"piper:{voice}"
         self.path = os.path.join(root or voice_dir(), voice + ".onnx")
         self.speed, self._v = speed, None
@@ -35,6 +70,16 @@ class PiperVoice(Voice):
         except ImportError:
             return False
 
+    def _config(self):
+        """Pace: speed 1.0 is the voice's own. Older piper-tts has no SynthesisConfig; then the default pace is used."""
+        if abs(self.speed - 1.0) < 1e-6:
+            return None
+        try:
+            from piper import SynthesisConfig
+            return SynthesisConfig(length_scale=1.0 / max(0.5, min(2.0, self.speed)))
+        except Exception:
+            return None
+
     def synth(self, text):
         if self._v is None:
             from piper import PiperVoice as PV
@@ -42,7 +87,11 @@ class PiperVoice(Voice):
         buf = tempfile.NamedTemporaryFile(suffix=".wav", delete=False); buf.close()
         try:
             with wave.open(buf.name, "wb") as w:
-                self._v.synthesize_wav(text, w)
+                cfg = self._config()
+                if cfg is not None:
+                    self._v.synthesize_wav(text, w, syn_config=cfg)
+                else:
+                    self._v.synthesize_wav(text, w)
             with wave.open(buf.name, "rb") as r:
                 return r.readframes(r.getnframes()), r.getframerate()
         finally:
@@ -90,7 +139,7 @@ class OsVoice(Voice):
             os.unlink(wav.name)
 
 
-def pick_voice(voice="en_GB-alan-medium", root=None):
+def pick_voice(voice="jarvis-high", root=None):
     """The best voice that is actually installed, or None (then PRAXIS stays silent and says so on screen)."""
     p = PiperVoice(voice, root)
     if p.available():

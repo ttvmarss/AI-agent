@@ -78,14 +78,14 @@ class OnScreen(unittest.TestCase):
         outside = sum(lum(int(w * 0.04) + dx, int(h * 0.22)) for dx in range(0, 40, 4)) / 10
         self.assertGreater(beam, outside * 1.3)                                            # lit inside the beam, darker outside it
 
-    def test_the_beam_is_really_drawn_not_just_the_ring(self):
+    def test_the_emitter_is_really_drawn_under_the_galaxy(self):
         c = self.view()
         full = c.grab().toImage()
         c._projector = lambda p, g, tint: None                                           # the same frame without the projector
         bare = c.grab().toImage()
         w, h = full.width(), full.height()
-        def region(img): return sum(sum(img.pixelColor(x, y).green() for x in range(int(w * .3), int(w * .7), 4)) for y in range(int(h * .12), int(h * .5), 4))
-        self.assertGreater(region(full), region(bare) * 1.04)                              # the beam adds light above the galaxy's base
+        def region(img): return sum(sum(img.pixelColor(x, y).blue() for x in range(int(w * .25), int(w * .75), 3)) for y in range(int(h * .72), int(h * .95), 2))
+        self.assertGreater(region(full), region(bare) * 1.02)                              # light was added where the emitter stands
 
     def test_hostile_node_numbers_are_cleaned_before_they_reach_the_painter(self):
         c = self.view()
@@ -98,6 +98,17 @@ class OnScreen(unittest.TestCase):
     def test_the_hologram_never_shows_a_wrong_state_it_only_decorates(self):
         a = self.view(mode="ok"); b = self.view(mode="bad")
         self.assertNotEqual(a.grab().toImage(), b.grab().toImage())                        # state colour still dominates
+
+    def test_a_bug_while_painting_cannot_leave_a_painter_open_and_crash_the_app(self):
+        c = self.view()
+        def boom(*a, **k): raise RuntimeError("bug in a draw routine")
+        c._hud = boom
+        try:
+            c.grab()                                  # the error surfaces as an exception; it must not be a segfault
+        except Exception:
+            pass
+        c._hud = CoreView._hud.__get__(c)
+        c.grab()                                      # and the widget keeps working afterwards
 
     def test_fin_rejects_every_unsafe_number(self):
         for x in (float("nan"), float("inf"), float("-inf"), None, "abc", [], object()):

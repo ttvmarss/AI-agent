@@ -110,7 +110,7 @@ max_checkpoint_mb = 512     # PRAXIS copies the folder before each goal so it ca
 [voice]
 enabled = true              # speak to it, it speaks back; needs: pip install -e ".[voice]"
 wake_word = "praxis"        # it acts only on sentences that start with this
-voice = "en_GB-alan-medium" # Piper voice (downloaded once, ~60 MB); falls back to the operating system's voice
+voice = "jarvis-high"       # Piper voice, downloaded once (~115 MB): jarvis-high | jarvis-medium | en_US-ryan-high | en_GB-alan-medium ...
 stt_model = "base.en"       # Whisper size: tiny.en (fastest) | base.en | small.en (most accurate)
 attentive_s = 10.0          # seconds after it speaks that you may answer without the name
 approval_s = 60.0           # silence this long on an approval means "deny"
