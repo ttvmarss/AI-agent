@@ -15,7 +15,7 @@ class Settings:
         self.path = os.path.join(self.home, "desktop.json")
         self.recent, self.geometry = [], ""
         try:
-            with open(self.path) as f:
+            with open(self.path, encoding="utf-8") as f:
                 d = json.load(f)
             self.recent = [x for x in d.get("recent", []) if isinstance(x, str)][:self.MAX_RECENT]
             self.geometry = d.get("geometry", "") if isinstance(d.get("geometry"), str) else ""
@@ -33,7 +33,7 @@ class Settings:
         try:
             os.makedirs(self.home, exist_ok=True)
             tmp = self.path + ".tmp"
-            with open(tmp, "w") as f:
+            with open(tmp, "w", encoding="utf-8") as f:
                 json.dump({"recent": self.recent, "geometry": self.geometry}, f)
             os.replace(tmp, self.path)
         except OSError:

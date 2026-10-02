@@ -117,8 +117,11 @@ class UI(unittest.TestCase):
     def test_closing_the_dialog_window_counts_as_deny(self):
         app, ctl, ws = self.make([tdc.Approvals.PLAN], agents={"claude": FakeAgent()})
         self.goal(app, "x"); self.assertTrue(pump(app, lambda: len(dialogs(app)) == 1))
-        dialogs(app)[0].destroy() if False else dialogs(app)[0].deny_btn.invoke()
-        self.assertTrue(pump(app, lambda: ctl.state == "idle")); self.assertFalse(os.path.exists(os.path.join(ws, "made.txt")))
+        d = dialogs(app)[0]
+        d.tk.call(d.protocol("WM_DELETE_WINDOW"))              # exactly what the title-bar X does
+        self.assertTrue(pump(app, lambda: app.mission.status.cget("text") == "FAILED"))
+        self.assertFalse(os.path.exists(os.path.join(ws, "made.txt")))   # closing is a refusal, never consent
+        self.assertEqual(len(dialogs(app)), 0)
 
     def test_stop_button_cancels_and_restores(self):
         gate = threading.Event()
@@ -157,6 +160,25 @@ class UI(unittest.TestCase):
         app.show("System"); app.root.update()
         self.assertEqual(len(app.pages["System"].tree.get_children()), 1)
         self.assertIn("sandbox", app.pages["System"].facts.get("1.0", "end"))
+
+    def test_no_models_installed_shows_a_clear_setup_message_not_a_blank_screen(self):
+        try:
+            root = tk.Tk()
+        except tk.TclError as e:
+            self.skipTest(f"no display: {e}")
+        import types
+        from praxis.router import Router
+        st = fake_stack([])
+        st.providers, st.router, st.skipped = [], Router([]), {"claude": "not installed", "ollama": "ollama unreachable"}
+        ws, home = tempfile.mkdtemp(), tempfile.mkdtemp()
+        ctl = Controller(ws, stack_factory=lambda w: st, home=home); ctl.start()
+        app = App(ctl, FakeTelemetry(), root=root)
+        self.addCleanup(lambda: root.destroy() if root.winfo_exists() else None)
+        self.assertTrue(pump(app, lambda: ctl.state == "idle"))
+        self.assertTrue(pump(app, lambda: "No AI models" in app.mission.sub.cget("text"), 4))
+        t = app.mission.sub.cget("text")
+        self.assertIn("claude", t.lower()); self.assertIn("Models", t)          # names what is missing and where to go
+        self.assertEqual(app.mission.status.cget("text"), "SETUP NEEDED")
 
     def test_resume_button_appears_only_when_a_goal_was_interrupted(self):
         app, ctl, ws = self.make([GOOD])

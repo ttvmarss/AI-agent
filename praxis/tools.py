@@ -70,6 +70,20 @@ class Workspace:
             else:
                 shutil.copy2(s, d, follow_symlinks=False)
 
+    def size_bytes(self, stop_after=None):
+        """Bytes a checkpoint would copy (skips the same trees). Returns early once above `stop_after`."""
+        total = 0
+        for base, dirs, files in os.walk(self.root):
+            dirs[:] = [d for d in dirs if d not in _SKIP]
+            for fn in files:
+                try:
+                    total += os.path.getsize(os.path.join(base, fn))
+                except OSError:
+                    continue
+                if stop_after is not None and total > stop_after:
+                    return total
+        return total
+
     def manifest(self):
         """{relpath: sha1} of every workspace file (used to report exactly what a delegate changed)."""
         out = {}
@@ -85,7 +99,7 @@ class Workspace:
 
     # -- tools --------------------------------------------------------------
     def fs_read(self, path):
-        with open(self.resolve(path), "r", errors="replace") as f:
+        with open(self.resolve(path), "r", encoding="utf-8", errors="replace") as f:
             return f.read(MAX_OUT)
 
     def fs_list(self, path="."):
@@ -94,7 +108,7 @@ class Workspace:
     def fs_write(self, path, content):
         p = self.resolve(path)
         os.makedirs(os.path.dirname(p), exist_ok=True)
-        with open(p, "w") as f:
+        with open(p, "w", encoding="utf-8") as f:  # explicit: Windows defaults to cp1252 and would crash on "✓"
             f.write(content)
         return f"wrote {len(content)} bytes to {path}"
 
@@ -106,7 +120,7 @@ class Workspace:
         elif argv and argv[0] in ("python", "python3"):
             argv[0] = sys.executable  # `python3` does not exist on most Windows machines
         proc = subprocess.run(argv, cwd=self.root, capture_output=True, text=True,
-                              timeout=timeout, shell=False)
+                              encoding="utf-8", errors="replace", timeout=timeout, shell=False)
         out = (proc.stdout + proc.stderr)[-MAX_OUT:]
         return {"returncode": proc.returncode, "output": out}
 

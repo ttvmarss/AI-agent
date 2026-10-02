@@ -48,6 +48,26 @@ class CancelTests(unittest.TestCase):
         self.assertTrue(log.all(type_="goal.cancelled"))
         self.assertEqual(log.verify_chain(), (True, None))
 
+    def test_stop_during_verification_prevents_the_next_step_from_starting(self):
+        """Stop between steps must stop BEFORE the next action runs, not one action late."""
+        import praxis.executive as exe
+        ws, log = tempfile.mkdtemp(), EventLog()
+        steps = [W("s1", "a.txt", "1"), W("s2", "b.txt", "2", deps=["s1"])]
+        ex = Executive(ws, log, Router([ScriptedProvider([plan(steps, [{"type": "file_exists", "path": "b.txt"}])])]))
+        real = exe.verify
+        def verify_then_stop(spec, w, gate=None):
+            r = real(spec, w, gate)
+            ex.cancel()                      # Stop pressed while step 1 is being verified
+            return r
+        exe.verify = verify_then_stop
+        try:
+            r = ex.run("x")
+        finally:
+            exe.verify = real
+        self.assertEqual(r.status, CANCELLED)
+        self.assertEqual(len(log.all(type_="tool.result")), 1)       # step 2's tool never ran
+        self.assertFalse(os.path.exists(os.path.join(ws, "b.txt")))
+
     def test_executive_is_reusable_after_a_cancel(self):
         ws, log = tempfile.mkdtemp(), EventLog()
         good = plan([W("s1", "a.txt", "1")], [{"type": "file_exists", "path": "a.txt"}])

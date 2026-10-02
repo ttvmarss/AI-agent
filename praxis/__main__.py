@@ -12,6 +12,15 @@ from .registry import detect_memory_bytes
 from .report import hardware_report, model_table, ollama_tips, recommendation_report
 
 
+def _safe_streams():
+    """A Windows console may be cp1252: never crash on a model's unicode, print a replacement instead."""
+    for st in (sys.stdout, sys.stderr):
+        try:
+            st.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
 def _paths(ws):
     ws = os.path.abspath(ws)
     os.makedirs(os.path.join(ws, ".praxis"), exist_ok=True)
@@ -33,7 +42,7 @@ def _executive(ws, log, stack, a):
     return Executive(ws, log, stack.router, approver=_approver, agents=stack.agents,
                      critic=not getattr(a, "no_critic", False) and len(stack.providers) > 1,
                      max_steps=lim["max_steps"], max_model_calls=lim["max_model_calls"],
-                     max_cost_usd=lim["max_cost_usd"] or None,
+                     max_cost_usd=lim["max_cost_usd"] or None, max_checkpoint_mb=lim.get("max_checkpoint_mb", 512),
                      data_class="private" if getattr(a, "private", False) else stack.cfg["privacy"]["data_class"],
                      sandbox=stack.sandbox)
 
@@ -99,6 +108,7 @@ def cmd_doctor(stack, ws, ping, ping_all=False):
 
 
 def main(argv=None):
+    _safe_streams()
     ap = argparse.ArgumentParser(prog="praxis")
     sub = ap.add_subparsers(dest="cmd", required=True)
 

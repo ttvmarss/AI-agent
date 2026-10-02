@@ -109,7 +109,7 @@ def _toposort(steps):
 class Executive:
     def __init__(self, workspace, log, router, approver=None, max_steps=20, max_model_calls=8,
                  max_replans=2, max_auto_class=2, agents=None, critic=True, max_cost_usd=None,
-                 data_class="project", sandbox=None, memory=True, keep_checkpoints=10):
+                 data_class="project", sandbox=None, memory=True, keep_checkpoints=10, max_checkpoint_mb=512):
         self.sandbox = sandbox
         self.ws = Workspace(workspace, sandbox)
         self.log, self.router, self.approver = log, router, approver
@@ -122,6 +122,7 @@ class Executive:
         self._cancel = threading.Event()
         self._ctx = {}
         self.keep_checkpoints = keep_checkpoints
+        self.max_checkpoint_mb = max_checkpoint_mb
         self.memory = Memory(log) if memory else None
 
     # -- kill switch -----------------------------------------------------------
@@ -245,6 +246,12 @@ class Executive:
         goal = uuid.uuid4().hex[:10]
         intent = self._ev(goal, "user", "goal.intent", {"text": goal_text})
         self._ctx["goal"] = goal
+        limit = self.max_checkpoint_mb * 2**20 if self.max_checkpoint_mb else None
+        if limit and self.ws.size_bytes(stop_after=limit) > limit:  # before any model call or change
+            return self._finish(goal, intent, Report(
+                FAILED, goal, f"this folder is too large to snapshot safely (more than {self.max_checkpoint_mb} MB). "
+                "PRAXIS copies the folder before acting so it can undo everything: open a smaller project folder "
+                "or raise limits.max_checkpoint_mb."))
         calls = [0]
         try:
             listing = self.ws.fs_list(".")

@@ -14,7 +14,7 @@ class Registry:
         self.path = path
         self.data = {}
         if path and os.path.exists(path):
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 self.data = json.load(f)
 
     def score(self, name, kind="planning"):
@@ -33,7 +33,7 @@ class Registry:
     def save(self):
         if self.path:
             os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
-            with open(self.path, "w") as f:
+            with open(self.path, "w", encoding="utf-8") as f:
                 json.dump(self.data, f, indent=2, sort_keys=True)
 
 

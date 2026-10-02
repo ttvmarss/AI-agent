@@ -52,7 +52,8 @@ def run_cli(argv, stdin_text="", strip_env=(), timeout=300, cwd=None):
     kw = {"creationflags": 0x00000200} if sys.platform.startswith("win") else {"start_new_session": True}
     try:
         p = subprocess.Popen([exe] + list(argv[1:]), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE, text=True, cwd=cwd, env=env, shell=False, **kw)
+                             stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
+                             cwd=cwd, env=env, shell=False, **kw)
     except FileNotFoundError:
         raise ProviderError(f"{argv[0]}: not installed or not on PATH")
     deadline = threading.Event()

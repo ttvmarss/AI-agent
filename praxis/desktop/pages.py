@@ -14,8 +14,6 @@ from .theme import COL, STATE_COLOR
 from .view import clock, summarize
 from .widgets import LogText
 
-ICON = {"pending": "o", "running": ">", "waiting": "?", "ran": "+", "verified": "OK", "denied": "X",
-        "failed": "X", "rolled back": "<"}
 ICON = {"pending": "○", "running": "▶", "waiting": "◔", "ran": "●", "verified": "✓",
         "denied": "⊘", "failed": "✗", "rolled back": "↺"}
 STATE_TAG = {"verified": "ok", "ran": "info", "running": "accent", "waiting": "warn", "denied": "bad",
@@ -106,6 +104,7 @@ class MissionPage(ttk.Frame):
         self.activity.grid(row=0, column=0, sticky="nsew")
         vscroll(box, self.activity).grid(row=0, column=1, sticky="ns")
         self._plan_ids = None
+        self.hint = ""   # shown while idle with no goal (e.g. "no models installed yet")
 
     # -- feed ------------------------------------------------------------------
     def append_events(self, events):
@@ -122,6 +121,8 @@ class MissionPage(ttk.Frame):
             label, color = "STOPPING", COL["warn"]
         elif state == "error":
             label, color = "ERROR", COL["bad"]
+        if label == "IDLE" and self.hint and not v.goal_text:
+            label, color = "SETUP NEEDED", COL["warn"]
         self.status.configure(text=label, fg=color)
         done = sum(s.state in ("verified", "ran") for s in v.steps)
         bits = []
@@ -139,7 +140,8 @@ class MissionPage(ttk.Frame):
             bits.append("Plan was built from file contents, so it is capped at reversible actions.")
         if v.cost:
             bits.append(f"model cost so far ${v.cost:.3f}")
-        self.sub.configure(text="  |  ".join(bits) if bits else "Describe an outcome and press Run.")
+        idle_text = self.hint if (self.hint and not v.goal_text) else "Describe an outcome and press Run."
+        self.sub.configure(text="  |  ".join(bits) if bits else idle_text)
         ids = tuple(s.id for s in v.steps)
         if ids != self._plan_ids:
             self.plan.delete(*self.plan.get_children())

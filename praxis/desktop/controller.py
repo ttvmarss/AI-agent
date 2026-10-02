@@ -19,6 +19,25 @@ from .settings import Settings
 from .view import build_view, explain
 
 
+def workspace_problem(path):
+    """Why this folder should not be a workspace (home, a drive root, a system folder), or None if it is fine."""
+    p = os.path.realpath(path)
+    home = os.path.realpath(os.path.expanduser("~"))
+    raw = path.replace("\\", "/").lower().rstrip("/")      # also judge the text as typed (Windows paths on any OS)
+    low = p.lower().replace("\\", "/").rstrip("/")
+    if p == home:
+        return "That is your whole home folder. Choose a specific project folder inside it."
+    if os.path.dirname(p) == p or any(len(x) == 2 and x[1] == ":" for x in (raw, low)):
+        return "That is a drive root. Choose a specific project folder."
+    if p == os.path.dirname(home):
+        return "That folder holds every user's home folder. Choose a specific project folder."
+    system = ("/usr", "/etc", "/bin", "/sbin", "/lib", "/boot", "/var", "/sys", "/proc", "/dev", "/system", "/library",
+              "c:/windows", "c:/program files", "c:/program files (x86)", "c:/programdata")
+    if any(x == s or x.startswith(s + "/") for s in system for x in (raw, low)):
+        return "That is a system folder. Choose a specific project folder."
+    return None
+
+
 @dataclass
 class ApprovalRequest:
     id: str
@@ -53,6 +72,7 @@ class Controller:
         self._tl = threading.local()
         self._last_id = 0
         self._on_executive_built = None  # test hook
+        self.refusal = ""
         self.notes = []  # human-readable messages for the status bar (errors from the worker)
 
     # ---- state ---------------------------------------------------------------
@@ -92,6 +112,9 @@ class Controller:
                 self._state, self.error = "error", f"{type(e).__name__}: {e}"
 
     def open_workspace(self, path):
+        self.refusal = workspace_problem(path) or ""
+        if self.refusal:
+            return False
         with self._lock:
             if self._state == "working":
                 return False
@@ -110,7 +133,7 @@ class Controller:
         return Executive(self.workspace, log, st.router, approver=self._approver, agents=st.agents,
                          critic=not no_critic and len(st.providers) > 1,
                          max_steps=lim["max_steps"], max_model_calls=lim["max_model_calls"],
-                         max_cost_usd=lim["max_cost_usd"] or None,
+                         max_cost_usd=lim["max_cost_usd"] or None, max_checkpoint_mb=lim.get("max_checkpoint_mb", 512),
                          data_class="private" if private else st.cfg["privacy"]["data_class"], sandbox=st.sandbox)
 
     def submit(self, text, private=False, no_critic=False):

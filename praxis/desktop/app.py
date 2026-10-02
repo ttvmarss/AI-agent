@@ -12,6 +12,7 @@ from . import theme
 from .dialogs import ApprovalDialog
 from .pages import MemoryPage, MissionPage, ModelsPage, SystemPage, TimelinePage
 from .theme import COL
+from .view import View
 from .widgets import Bar, NavItem, Reactor
 
 NAV = [("Mission", MissionPage), ("Timeline", TimelinePage), ("Models", ModelsPage),
@@ -163,7 +164,11 @@ class App:
         if os.path.realpath(path) == self.controller.workspace:
             return
         if not self.controller.open_workspace(path):
-            self.note("Finish or stop the current goal before switching folders.", "warn")
+            if self.controller.refusal:
+                mb.showwarning("Choose a project folder", self.controller.refusal)
+                self.note(self.controller.refusal, "warn")
+            else:
+                self.note("Finish or stop the current goal before switching folders.", "warn")
             return
         self.timeline.clear()
         self.mission.activity.replace("", "info")
@@ -205,7 +210,7 @@ class App:
                 self.mission.set_busy(False, bool(c.unfinished()))
                 self.reactor.set_mode("idle" if u.view.status != "VERIFIED" else "ok")
         else:
-            self.mission.show_view(__import__("praxis.desktop.view", fromlist=["View"]).View(), state)
+            self.mission.show_view(View(), state)
             self.reactor.set_mode(state)
         label, tone = PILL.get(state, ("?", "muted"))
         if state == "working" and u is not None and (u.approvals or u.view.status == "WAITING FOR YOU"):
@@ -241,6 +246,11 @@ class App:
                                      fg=COL["ok"] if info.get("sandbox_strong") else COL["warn"])
         self.mission.set_busy(False, bool(c.unfinished()))
         n = len(info.get("providers", []))
+        missing = ", ".join(sorted(info.get("skipped", {})))
+        self.mission.hint = "" if n else (
+            "No AI models are available yet. Install and sign in to at least one of: Claude (claude), ChatGPT (codex), "
+            "Factory (droid), or install Ollama for local models. Open Models to see what to download for this machine, "
+            f"then restart PRAXIS. Not found: {missing}." )
         self.note(f"Ready. {n} model instance(s) available." + ("" if n else "  None found: open Models or run `praxis doctor`."),
                   "muted" if n else "warn")
         if getattr(self, "current", "") in ("Models", "Memory", "System"):

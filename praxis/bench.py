@@ -18,7 +18,7 @@ from .router import ProviderError, Router
 
 def _read(ws, name):
     try:
-        with open(os.path.join(ws, name)) as f:
+        with open(os.path.join(ws, name), encoding="utf-8", errors="replace") as f:
             return f.read()
     except OSError:
         return None
@@ -138,7 +138,7 @@ CRITIQUE_CASES = [
 def _setup(task):
     ws = tempfile.mkdtemp(prefix="praxis-bench-")
     for name, text in task["setup"].items():
-        with open(os.path.join(ws, name), "w") as f:
+        with open(os.path.join(ws, name), "w", encoding="utf-8") as f:
             f.write(text)
     return ws
 

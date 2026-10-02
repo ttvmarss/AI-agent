@@ -1,0 +1,5 @@
+[console_scripts]
+praxis = praxis.__main__:main
+
+[gui_scripts]
+praxis-desktop = praxis.desktop.__main__:main

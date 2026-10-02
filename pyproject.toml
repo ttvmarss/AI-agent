@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "praxis-os"
+version = "0.1.0"
+description = "PRAXIS: an event-sourced executive kernel that turns outcomes into verified results across Claude, Codex, Factory Droid, Devin and Ollama."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []   # standard library only, by design
+
+[project.scripts]
+praxis = "praxis.__main__:main"
+
+[project.gui-scripts]
+praxis-desktop = "praxis.desktop.__main__:main"   # pip creates praxis-desktop.exe on Windows (no console window)
+
+[tool.setuptools]
+packages = ["praxis", "praxis.desktop"]

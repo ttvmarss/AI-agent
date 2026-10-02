@@ -96,7 +96,7 @@ class CodexCLI(_CLIProvider):
             argv = ["codex", "exec", "--sandbox", sandbox, "--skip-git-repo-check", "--ephemeral",
                     "-o", outp] + (["-m", self.model] if self.model else []) + ["-"]
             self._run(argv, prompt, cwd)
-            with open(outp) as f:
+            with open(outp, encoding="utf-8", errors="replace") as f:
                 text = f.read().strip()
         finally:
             if os.path.exists(outp):
