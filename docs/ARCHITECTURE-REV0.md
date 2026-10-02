@@ -1449,7 +1449,26 @@ cannot jump), so previews and tests drive it deterministically. The DATA and FRU
 controller and router and are re-synchronised from the router when a stack loads. The Qt package imports nothing from Tk; the
 approval wording lives in a toolkit-free module so both shells agree.
 
-**42.6 Evidence.** 357 tests in the suite. Full run on Python 3.11 with PySide6 6.11: 357 run, 341 execute and 16 skip (the Tk window tests, which need `tkinter`); the Tk window tests (with the controller and view tests) run separately on Python 3.12 under a virtual display: 49 pass. Of the 357, 24 drive the **real** Qt window offscreen with the real controller: run to VERIFIED, the core lighting the provider being called *right now*, approval dialogs answered from inside the modal loop (exact action shown, Deny focused and default, Esc and close refuse, one dialog per request), STOP restoring the workspace, the `private` setting keeping a cloud model from ever seeing the goal, `frugal` serving a goal from the local model with **zero** Claude calls, the failover ladder in frugal order, and a key added through the dialog making the provider appear in the real `build_stack`. Free-tier adapters are tested against local servers that return the documented error shapes. Screenshots of every page were reviewed at 1360x860 and at the 1100x760 minimum. Mutation (sabotage) results for this phase are appended below when the run completes.
+**42.6 Evidence.** 448 tests in the suite. On Python 3.11 with PySide6 6.11 all 448 run (432 execute; the 16 Tk window tests skip
+there); the Tk window tests, with the controller and view tests, run separately on Python 3.12 under a virtual display (51 pass); on
+the system Python with neither toolkit 376 execute and 72 skip. Of these, 44 pure-engine tests, 25 rendered-widget tests and 31
+window tests exercise the Qt command center: the real controller drives the real window offscreen (run to VERIFIED with the PLAN,
+ACT and VERIFY rings carrying the real result; approvals answered from inside the modal loop with the exact action shown, Deny
+focused and default, Esc and close refusing; STOP restoring the workspace; the `private` setting keeping a cloud model from ever
+seeing the goal; `frugal` serving a goal with zero Claude calls; a key added through the dialog making the provider appear in the
+real `build_stack`), and the widget is rendered to real pixels (colour per state, the ACT ring's arcs against real step states, the
+VERIFY ring sealing, layout at every size). Free-tier adapters are tested against local servers that return the documented error
+shapes. Every page and every state was reviewed in screenshots, at 1360x860 and at the 1100x760 minimum, and as a video.
+
+**Sabotage (mutation) testing, two rounds on this phase's code.** Round 1 (routing, privacy, free tiers, usage, escalation, nodes,
+window): 63 mutants, 43 caught at first. The 20 survivors were 17 real test gaps (closed and each re-verified as caught), 1
+equivalent mutant (the code was simplified), 1 invalid mutant (the harness had patched a comment that quoted the pattern; re-run
+correctly it was caught) and 1 redundant argument (removed). The gaps were instructive: a test that put a key in the *request* but
+never in the server's *reply* (so key scrubbing was unproven), a cancel test that never reached the cancel check, a strategy map
+asserted against itself, and 402/401/403/model-gone/pacing/usage-pruning/secret-scanner/key-file-mode paths with no assertion.
+Round 2 (The Loom: engine, widget, ring mapping): 44 mutants, 41 caught at first; the 3 survivors were real gaps (depth layers
+satisfied by the dim halo even when the disc's depth sort was broken, galaxy rotation masked by arm flow, a FAILED goal that never
+planned lighting the PLAN ring red), closed and re-verified: 44 of 44.
 
 **42.7 Defects found by this phase's own tests (kept in the failure log style).**
 * *Key stored under the wrong name* (UI): the window's "Add key" saved under the environment-variable name while config and the CLI
@@ -1460,6 +1479,10 @@ approval wording lives in a toolkit-free module so both shells agree.
 * *Overlapping hero and plan graph* (UI): the layout's minimum height (938 px) exceeded the window (860 px). Fixed and tested by
   asserting the geometry at the minimum window size.
 * *Stale cards* (UI): refreshed Fuel cards were removed with `deleteLater` alone and stayed painted until the event loop turned.
+* *Nodes drawn on top of the galaxy* (The Loom): the helper measuring the rings' width measured a freshly built galaxy whose rings
+  had not yet unfolded and returned 0. Fixed; the layout is now computed from the unfolded rings and tested at four sizes.
+* *Detail dropped during an offline render* (tooling): the widget's own quality governor reduced the particle count while a video
+  rendered on a busy machine; offline renders now pin maximum detail.
 
 **42.8 Not proven here.** The free tiers themselves (no keys: fake servers returning the documented error shapes only); the Qt window on
 Windows (offscreen on Linux, screenshots reviewed); the local-model additions' speed and quality (catalog quality ordering uses

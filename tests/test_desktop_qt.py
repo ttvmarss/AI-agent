@@ -231,6 +231,7 @@ class QtUI(unittest.TestCase):
             (View(status="VERIFIED", steps=steps), ("ready", ["verified", "running", "pending"], [], False)),     # no evidence: never "sealed"
             (View(status="FAILED", reason="planning failed: no model", goal_text="g"), ("failed", [], [], False)),
             (View(status="FAILED", reason="step s2 failed", steps=steps), ("ready", ["verified", "running", "pending"], [], False)),
+            (View(status="FAILED", reason="workspace is too large to checkpoint", goal_text="g"), ("none", [], [], False)),   # never planned: PLAN is not "rejected"
         ]
         for view, (plan, st, ck, sealed) in cases:
             m.show_view(view, "idle", False, [])

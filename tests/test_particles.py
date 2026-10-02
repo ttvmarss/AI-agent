@@ -104,12 +104,35 @@ class Projection(unittest.TestCase):
         self.assertTrue(0.30 < by_variant[2] / total < 0.48, by_variant)
         self.assertGreater(by_variant[1] / total, 0.15)
 
-    def test_all_three_depth_layers_are_used_so_the_rings_can_weave_through(self):
+    def test_all_three_depth_layers_are_used_by_the_disc_itself_so_the_rings_can_weave_through(self):
         buckets, _ = settled(2000).project(0, 0, 100)
         per_depth = [0, 0, 0]
         for k, b in enumerate(buckets):
-            per_depth[(k // P.VARIANTS) % 3] += len(b)
-        self.assertTrue(all(n > 100 for n in per_depth), per_depth)
+            if k % P.VARIANTS != 0:                               # variants 1-2 are DISC particles only (the halo is all variant 0)
+                per_depth[(k // P.VARIANTS) % 3] += len(b)
+        self.assertTrue(all(n > 60 for n in per_depth), per_depth)
+
+    def test_the_galaxy_rotates_at_its_own_rate_and_wraps(self):
+        f = settled(100)
+        r0 = f.rot; run(f, 1.0)
+        self.assertAlmostEqual((f.rot - r0) % P.TAU, P.MODE["idle"]["spin"], delta=0.02)      # idle: ~0.10 rad/s
+        f.dyn.set_mode("working"); run(f, 3.0)
+        r1 = f.rot; run(f, 1.0)
+        self.assertAlmostEqual((f.rot - r1) % P.TAU, P.MODE["working"]["spin"], delta=0.03)   # working: faster
+        f.dyn.set_mode("waiting"); run(f, 5.0)
+        r2 = f.rot; run(f, 1.0)
+        self.assertLess((f.rot - r2) % P.TAU, 0.06)                                           # waiting for you: nearly still
+        self.assertTrue(0.0 <= f.rot < P.TAU)
+
+    def test_rotation_alone_changes_the_picture_even_with_the_arm_flow_stopped(self):
+        f = settled(300)
+        f.dyn.v["flow"] = 0.0; P.MODE["idle"]["flow"], keep = 0.0, P.MODE["idle"]["flow"]
+        try:
+            a = f.project(0, 0, 100)[0]
+            f.rot += 0.5
+            self.assertNotEqual(a, f.project(0, 0, 100)[0])
+        finally:
+            P.MODE["idle"]["flow"] = keep
 
     def test_the_position_helper_agrees_with_the_projection(self):
         f = settled(300)

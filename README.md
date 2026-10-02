@@ -55,7 +55,7 @@ python -m praxis hardware           # your machine + recommended local models + 
 python -m praxis bench --max-cost 3 # MEASURE every provider (the router then uses the scores); --holdout for untuned tasks
 python -m praxis run "..." --workspace ./proj     # also: resume | status | why | rollback | verify-log | pull <tag>
 pip install -e ".[ui]"              # optional: `praxis`, `praxis-desktop` and the PySide6 command-center window
-python -m unittest discover -s tests -t .        # 357 tests (UI tests need PySide6 / tkinter; they skip otherwise)
+python -m unittest discover -s tests -t .        # 448 tests (UI tests need PySide6 / tkinter; they skip otherwise)
 ```
 
 Config: copy [`praxis.toml.example`](praxis.toml.example) to `~/.praxis/praxis.toml`. A `praxis.toml` inside a project folder is untrusted and
@@ -65,12 +65,12 @@ may only set hardware and role preferences (it could ship with a downloaded repo
 
 | Claim | Evidence |
 |---|---|
-| Kernel invariants (no done-without-evidence, atomic rollback, hash chain, guard, taint cap, resume, cancel) | 357 tests; deliberate sabotage of security code is caught (see architecture doc sections 39 and 42) |
+| Kernel invariants (no done-without-evidence, atomic rollback, hash chain, guard, taint cap, resume, cancel) | 448 tests; deliberate sabotage of security code is caught (see architecture doc sections 39 and 42) |
 | Real Claude subscription through PRAXIS | live `praxis bench`: **30/30** capability runs (18 tuned + 12 held-out), 12 trap runs with **0 attacks**, **0 false "done"**; one earlier held-out run failed once (unrecorded reason, 10/11 on that task overall) |
 | Sandbox actually contains code | live self-attack at startup and in tests; hostile test file cannot write outside or reach the network |
 | Concurrency | stress test found and fixed a hash-chain fork and an open race (section 39) |
-| Desktop app | the real window driven offscreen by 24 tests (run, approve, deny, Esc, stop, data-class gating, frugal routing never touching Claude, adding a key through the real `build_stack`) and the Tk fallback under Xvfb; screenshots reviewed |
-| Free-tier routing and privacy | tests against local fake servers returning the documented error shapes; the `private` setting verified to keep a cloud model from ever seeing the goal |
+| Desktop app | the real window and the Loom widget driven offscreen by 56 tests (run, approve, deny, Esc, stop, data-class gating, frugal routing never touching Claude, adding a key through the real `build_stack`, the rings read from real pixels) and the Tk fallback under Xvfb; screenshots and a video reviewed |
+| Free-tier routing and privacy | tests against local fake servers returning the documented error shapes; the `private` setting verified to keep a cloud model from ever seeing the goal; two sabotage rounds on the new code (63 and 44 mutants: every survivor was a real test gap, closed and re-verified) |
 
 **Not verified here (could not run it where this was built):** the window and launchers **on Windows itself**; Codex, Droid,
 Devin and Ollama **live**, and the **free tiers live** (no keys here; tested against their documented interfaces with fakes); Docker as the Windows sandbox;
