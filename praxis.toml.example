@@ -1,0 +1,45 @@
+# Copy to <workspace>/praxis.toml or ~/.config/praxis/praxis.toml. Every key is optional.
+
+[providers.claude]          # your Claude subscription, via the official `claude` CLI login
+enabled = true
+model = ""                  # "" = whatever your plan's default is
+
+[providers.codex]           # your ChatGPT subscription, via `codex login`
+enabled = true
+model = ""
+
+[providers.droid]           # Factory; needs FACTORY_API_KEY in the environment
+enabled = true
+model = ""
+
+[providers.ollama]          # local, private. "auto" = best installed model that fits this machine
+enabled = true
+host = "http://127.0.0.1:11434"
+model = "auto"              # or a fixed tag, e.g. "qwen3.6:27b"
+prefer = []                 # tags tried first if installed and they fit, e.g. ["qwen3.6:27b"]
+num_ctx = 16384
+memory_gb = 0               # 0 = auto-detect (GPU VRAM, else 60% of RAM)
+
+[providers.devin]           # remote agent sessions; spends ACUs => every use needs explicit approval
+enabled = false
+org_id = ""                 # or env DEVIN_ORG_ID ; key via env DEVIN_API_KEY
+
+[roles]                     # preference order per role (the router skips anything unavailable)
+planner   = ["claude", "codex", "droid", "ollama"]
+replanner = ["claude", "codex", "droid", "ollama"]
+critic    = ["codex", "claude", "droid", "ollama"]   # a DIFFERENT provider from the planner is always chosen
+
+[routing]
+strategy = "auto"           # auto: use measured `praxis bench` scores once every candidate has one; else the order above
+cooldown_s = 900            # subscription limit hit => provider rests this long, router falls back
+
+[limits]
+max_steps = 20
+max_model_calls = 8
+max_cost_usd = 0.0          # 0 = no cap (subscription calls report a list-price estimate)
+
+[privacy]
+data_class = "project"      # "private" = local (Ollama) only; nothing leaves the machine
+
+[sandbox]
+backend = "auto"            # auto | bwrap | unshare | docker | none

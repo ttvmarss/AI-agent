@@ -112,3 +112,29 @@ class Decisions(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProtectedPaths(unittest.TestCase):
+    """PRAXIS's own state and config are not the plan's to touch (log, checkpoints, registry, git hooks, config)."""
+
+    def setUp(self):
+        self.ws = tempfile.mkdtemp()
+
+    def test_writes_and_reads_of_protected_paths_are_class4(self):
+        for p in [".praxis/events.db", ".praxis/registry.json", ".praxis/checkpoints/x/a", ".git/hooks/pre-commit",
+                  ".git/config", "praxis.toml", "./praxis.toml", "sub/../.praxis/x", ".PRAXIS/x"[:0] or ".praxis"]:
+            self.assertGreaterEqual(classify_call("fs.write", {"path": p, "content": "x"}, self.ws), 4, p)
+            self.assertGreaterEqual(classify_call("fs.read", {"path": p}, self.ws), 4, p)
+
+    def test_symlink_into_protected_dir_is_caught(self):
+        os.makedirs(os.path.join(self.ws, ".praxis"))
+        os.symlink(".praxis", os.path.join(self.ws, "innocent"))
+        self.assertGreaterEqual(classify_call("fs.write", {"path": "innocent/events.db", "content": "x"}, self.ws), 4)
+
+    def test_shell_touching_protected_paths_is_class4(self):
+        for c in ["cat .praxis/events.db", "ls .git", "cat praxis.toml", "grep x .praxis/registry.json"]:
+            self.assertGreaterEqual(classify_shell(c, self.ws, sandboxed=True), 4, c)
+
+    def test_normal_files_unaffected(self):
+        self.assertEqual(classify_call("fs.write", {"path": "src/praxis_notes.toml", "content": "x"}, self.ws), 2)
+        self.assertEqual(classify_call("fs.read", {"path": "docs/.gitignore"}, self.ws), 0)

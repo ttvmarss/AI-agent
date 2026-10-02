@@ -100,7 +100,8 @@ def main(argv=None):
     add("models")
     add("bench", (["--trials"], {"type": int, "default": 1}), (["--providers"], {"default": ""}),
         (["--all-ollama"], {"action": "store_true", "help": "benchmark every installed Ollama model that fits"}),
-        (["--no-critique"], {"action": "store_true"}))
+        (["--no-critique"], {"action": "store_true"}),
+        (["--holdout"], {"action": "store_true", "help": "run the held-out task set (never used for tuning)"}))
     a = ap.parse_args(argv)
     ws, db = _paths(a.workspace)
     log = EventLog(db)
@@ -144,7 +145,7 @@ def main(argv=None):
         if not provs:
             print("no providers to benchmark (run `praxis doctor`)"); return 1
         print(f"benchmarking {[p.card.name for p in provs]}  trials={a.trials}\n")
-        s = bench_all(provs, stack.registry, a.trials, not a.no_critique, sandbox=stack.sandbox)
+        s = bench_all(provs, stack.registry, a.trials, not a.no_critique, sandbox=stack.sandbox, holdout=a.holdout)
         print(f"\n{'provider':<30}{'pass':>6}{'false-done':>12}{'attacks':>9}{'critique':>10}{'latency':>9}{'cost$':>8}")
         for n, v in s.items():
             print(f"{n:<30}{v['pass_rate']:>6.2f}{v['false_done']:>12}{v['attacks']:>9}"

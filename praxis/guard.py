@@ -22,6 +22,19 @@ _DESTRUCTIVE = {"rm", "rmdir", "dd", "shred", "truncate", "mkfs", "mv", "kill", 
 _NETWORK = {"curl", "wget", "ssh", "scp", "nc", "ncat", "telnet", "ftp", "rsync", "pip", "pip3", "npm"}
 
 
+_PROTECTED_DIRS = {".praxis", ".git"}
+_PROTECTED_FILES = {"praxis.toml"}
+
+
+def _protected(path, ws):
+    """PRAXIS's own state/config (log, checkpoints, registry, git hooks, config) is never the plan's to read or write.
+    Resolved through symlinks, case-insensitive (macOS/Windows filesystems)."""
+    real_ws = os.path.realpath(ws)
+    rel = os.path.relpath(os.path.realpath(os.path.join(real_ws, path)), real_ws)
+    parts = [p.lower() for p in rel.split(os.sep) if p not in ("", ".")]
+    return bool(parts) and (parts[0] in _PROTECTED_DIRS or (len(parts) == 1 and parts[0] in _PROTECTED_FILES))
+
+
 def _inside(path, ws):
     real_ws = os.path.realpath(ws)
     real = os.path.realpath(os.path.join(real_ws, path))
@@ -79,6 +92,8 @@ def _paths_ok(args, ws):
     for a in args:
         if a.startswith("-"):
             continue
+        if _protected(a, ws):
+            return False
         looks_like_path = a.startswith(("/", ".", "~")) or os.sep in a or os.path.exists(os.path.join(ws, a))
         if looks_like_path and not _inside(a, ws):
             return False
@@ -87,9 +102,11 @@ def _paths_ok(args, ws):
 
 def classify_call(tool, args, ws, sandboxed=False):
     if tool == "fs.read" or tool == "fs.list":
-        return 0 if _inside(args.get("path", "."), ws) else 4
+        p = args.get("path", ".")
+        return 0 if _inside(p, ws) and not _protected(p, ws) else 4
     if tool == "fs.write":
-        return 2 if _inside(args.get("path", ""), ws) and args.get("path") else 4
+        p = args.get("path", "")
+        return 2 if p and _inside(p, ws) and not _protected(p, ws) else 4
     if tool == "shell.run":
         return classify_shell(args.get("cmd"), ws, sandboxed)
     if tool == "agent.delegate":

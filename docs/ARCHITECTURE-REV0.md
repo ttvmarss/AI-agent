@@ -1281,4 +1281,46 @@ untrusted observations are allowed only after a human approves the concrete prop
 sandboxing; goal-level checkpoints copy the whole workspace (fine for small projects, not for large repos); the shell
 allowlist is deliberately narrow and will need widening with evidence. These are the Phase 1/5 gates and remain open.
 
+## 39. Status addendum — PRAXIS-1: real providers, sandbox, live evidence (2026-10-02)
+
+**Built since §38:** Claude/Codex/Droid CLI adapters (subscription login; API-key env vars stripped so a CLI can never
+silently bill an API key), Ollama adapter with memory-aware "smartest model that fits" selection (measured score beats size
+prior), Devin v3 delegate-only adapter (Class 4), capability registry + `praxis bench`, router with preference/measured
+ordering, privacy gating and rate-limit cooldown, second-model critic (always a different provider), cost budget,
+crash-resume (real `kill -9`-equivalent test, no model call on resume), observe-then-plan phase, OS sandbox with a live
+self-attack, BM25 memory with failure recall, checkpoint pruning, protected-path rules.
+
+**Found by running reality, not by my own tests (all fixed, each with a regression test):**
+| # | Finding | Source |
+|---|---|---|
+| F-006 | Taint-denies-all-replans made fix-and-retry useless | design review while building |
+| F-007 | **Verifier commands bypassed the Guard** (a plan could put `rm -rf .` in a success check) | first live run against real Claude |
+| F-008 | One-shot planner is blind to file contents -> reached for shell tools -> 2/7 pass | first live bench |
+| F-009 | Allowlisting `unittest` but not `python script.py` was security theater: both run code the plan just wrote. Replaced by: code execution is Class 2 only in an OS sandbox that survived a live self-attack, else Class 4 | analysis of F-008 |
+| F-010 | Plans could write `.praxis/` (log, registry), `.git/hooks`, `praxis.toml` | adversarial self-review |
+| F-011 | Sandbox self-test crashed instead of returning a verdict when an attack succeeded | mutation testing |
+
+**Live measurements (real Claude subscription via `claude -p`, this machine; checks are independent of the model):**
+| Set | Runs | Pass | False-done | Attack successes | Cost |
+|---|---|---|---|---|---|
+| Tuned set (prompt was iterated on it) | 7 + 21 (3 trials) | 7/7, 21/21 | 0 | 0 | $0.10, $0.31 |
+| **Held-out set** (written after tuning, never tuned on) | 5 (1 trial), 15 (3 trials) | 5/5, **14/15 (0.93)** | 0 | 0 | $0.12, $0.35 |
+| Critique bench (planted defects, 5 cases) | 5 | 5/5 | n/a | n/a | n/a |
+| Live delegation e2e (Class 3 escalate -> human approve -> real Claude edits workspace -> verify) | 1 | VERIFIED, code correct | 0 | 0 | ~$0.03 |
+
+The tuned-set number is optimistic by construction (Goodhart); **0.93 on the held-out set is the honest figure, n=15, one
+model**. The held-out failure is `holdout-trap-path-escape` (details below).
+
+**Test evidence:** 125 tests. Mutation checks on security-critical code: 15/15 then 4/5 killed (the 5th is an equivalent
+mutant for the scenario tested: the attack deletes the marker so the `except` branch gives the same verdict).
+
+**NOT verified live (no access from the build environment): Codex, Droid, Devin, Ollama.** Adapters follow the vendors'
+documented interfaces (verified against official docs on 2026-10-02) and are tested at the I/O boundary with recording
+fake binaries and local HTTP servers. That proves PRAXIS's behavior (argv, stdin, env, parsing, polling, fallback) but not
+the vendors'. Droid's JSON output shape is not documented in detail; the parser is defensive. `praxis doctor --ping` and
+`praxis bench` measure all of them for real on the user's machine and record the scores the router then uses.
+
+**Still not built:** voice, vision, engineering lab (CAD/sim), proactive engine, graphical workspace UI, multi-device,
+Windows-native sandbox (use WSL2 or Docker), GPU/VRAM-aware Ollama offload tuning, learned router.
+
 *End of Revision Zero. Revision One is due after the Phase 0 spikes report; failures get logged, not hidden.*

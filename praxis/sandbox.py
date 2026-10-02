@@ -3,7 +3,8 @@
 A backend is only ever called *strong* if `selftest()` actually attacks it and every attack fails:
   - writing a file inside the workspace must SUCCEED,
   - writing a file outside the workspace must FAIL,
-  - opening a network connection must FAIL.
+  - opening a network connection must FAIL,
+  - overwriting/deleting the workspace's .praxis/ state (event log, checkpoints, registry) must FAIL.
 Backends (first that passes wins): bwrap (Linux), unshare (Linux, rootless user namespaces), docker.
 No strong backend => the Guard classes code execution as Class 4 (human approval each time).
 """
@@ -21,6 +22,8 @@ mount -o remount,ro,bind / /
 mount --bind "$WS" "$WS"
 mount -o remount,rw,bind "$WS"
 cd "$WS"
+mkdir -p "$WS/.praxis"
+mount -t tmpfs tmpfs "$WS/.praxis"   # real PRAXIS state is invisible and unwritable to executed code
 mkdir -p "$WS/.praxis/tmp"
 export TMPDIR="$WS/.praxis/tmp" HOME="$WS/.praxis/tmp"
 exec "$@"
@@ -48,7 +51,7 @@ class BwrapSandbox(Sandbox):
 
     def wrap(self, argv, ws):
         return ["bwrap", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp",
-                "--bind", ws, ws, "--unshare-net", "--unshare-pid", "--die-with-parent", "--chdir", ws,
+                "--bind", ws, ws, "--tmpfs", f"{ws}/.praxis", "--unshare-net", "--unshare-pid", "--die-with-parent", "--chdir", ws,
                 "--setenv", "TMPDIR", "/tmp", "--setenv", "HOME", "/tmp"] + list(argv)
 
 
@@ -61,7 +64,7 @@ class DockerSandbox(Sandbox):
     def wrap(self, argv, ws):
         uid, gid = (os.getuid(), os.getgid()) if hasattr(os, "getuid") else (1000, 1000)
         return ["docker", "run", "--rm", "--network", "none", "--read-only", "--tmpfs", "/tmp",
-                "-v", f"{ws}:/work", "-w", "/work", "--memory", "2g", "--pids-limit", "256",
+                "-v", f"{ws}:/work", "--tmpfs", "/work/.praxis", "-w", "/work", "--memory", "2g", "--pids-limit", "256",
                 "--user", f"{uid}:{gid}", "-e", "HOME=/tmp", self.image] + list(argv)
 
 
@@ -90,6 +93,16 @@ def selftest(sb, python=None):
         run(f"open({os.path.join(outside, 'pwn.txt')!r},'w').write('x')")
         details["outside_write_blocked"] = not os.path.exists(os.path.join(outside, "pwn.txt"))
         details["network_blocked"] = run(_NET_PROBE) == "NET_BLOCKED"
+        state = os.path.join(ws, ".praxis"); os.makedirs(state, exist_ok=True)
+        with open(os.path.join(state, "events.db"), "w") as f:
+            f.write("REAL")
+        run("import os\ntry: open('.praxis/events.db','w').write('TAMPERED')\nexcept OSError: pass\n"
+            "try: os.remove('.praxis/events.db')\nexcept OSError: pass\n")
+        try:
+            with open(os.path.join(state, "events.db")) as f:
+                details["praxis_state_protected"] = f.read() == "REAL"
+        except OSError:  # deleted by the attack => NOT protected (a verdict, never a crash)
+            details["praxis_state_protected"] = False
     finally:
         shutil.rmtree(base, ignore_errors=True)
     return all(details.values()), details
@@ -103,7 +116,10 @@ def detect(prefer=("bwrap", "unshare", "docker"), log=None):
         if not shutil.which(binary) or sys.platform.startswith("win"):
             continue
         sb = cls()
-        ok, details = selftest(sb)
+        try:
+            ok, details = selftest(sb)
+        except Exception as e:  # a sandbox we cannot even test is a sandbox we do not trust
+            ok, details = False, {"selftest_crashed": f"{type(e).__name__}: {e}"}
         if log:
             log(f"sandbox {name}: {'PASS' if ok else 'FAIL'} {details}")
         if ok:

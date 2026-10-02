@@ -5,7 +5,8 @@ import shutil
 import subprocess
 import uuid
 
-_SKIP = {".praxis", ".git"}
+# Never copied by checkpoints, never deleted by rollback, never listed: tool-managed or regenerable trees.
+_SKIP = {".praxis", ".git", "node_modules", ".venv", "venv", "__pycache__"}
 MAX_OUT = 20000
 
 
@@ -40,6 +41,13 @@ class Workspace:
             else:
                 shutil.copy2(src, os.path.join(dest, name), follow_symlinks=False)
         return cid
+
+    def prune(self, delete_ids):
+        """Delete exactly these checkpoint directories (anything not named here is left alone)."""
+        for name in delete_ids:
+            if os.sep in name or name in ("", ".", ".."):
+                continue  # ids are plain directory names; never follow a crafted path
+            shutil.rmtree(os.path.join(self.ckpt_dir, name), ignore_errors=True)
 
     def rollback(self, cid):
         src = os.path.join(self.ckpt_dir, cid)
