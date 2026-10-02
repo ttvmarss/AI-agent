@@ -11,13 +11,13 @@ PATTERN = re.compile(POLITE + VERBS + r"\s+(?P<what>.+?)" + TAIL, re.I)
 NOT_PLAIN = re.compile(r"\b(and|then|also|with|in|on|to|that|which|so|using|containing|called|named|for)\b", re.I)
 
 
-def match(text, opener):
-    """-> a plan dict (the same shape a model would write) or None."""
-    t = re.sub(r"[.!?,]+$", "", str(text or "").strip())
-    m = PATTERN.match(t)
-    if not m:
-        return None
-    what = m.group("what").strip().strip("\"'")
+SPLIT = re.compile(r"\s*(?:,?\s*and\s+then\s+|,\s*and\s+|\s+and\s+|\s+then\s+|,\s*)", re.I)
+MAX_PARTS = 4
+
+
+def _one(what, opener):
+    """-> (action, cleaned target) when `what` is one plain app/site/url, else None."""
+    what = what.strip().strip("\"'")
     if not what or len(what.split()) > 4:
         return None
     action = opener.resolve(what)
@@ -27,6 +27,30 @@ def match(text, opener):
         return None
     if NOT_PLAIN.search(what) and action.kind == "app" and not re.fullmatch(r"[a-z0-9 .+-]+", what.lower()):
         return None
-    check = {"type": "process_running", "name": list(action.procs), "wait": 10}
-    return {"steps": [{"id": "open", "tool": "desktop.open", "args": {"target": what}, "deps": [], "verify": dict(check)}],
-            "success": [dict(check)], "reflex": "open", "label": action.label}
+    return action, what
+
+
+def match(text, opener):
+    """-> a plan dict (the same shape a model would write) or None. "Open YouTube and Google Chrome" is two steps, still no model."""
+    t = re.sub(r"[.!?,]+$", "", str(text or "").strip())
+    m = PATTERN.match(t)
+    if not m:
+        return None
+    parts = [x for x in SPLIT.split(m.group("what").strip()) if x.strip()]
+    if not parts or len(parts) > MAX_PARTS:
+        return None
+    steps, checks, labels, seen = [], [], [], set()
+    for part in parts:
+        pm = PATTERN.match(part)                                   # a repeated verb is fine: "open a and open b"
+        one = _one(pm.group("what") if pm else part, opener)
+        if one is None:
+            return None                                            # anything unclear: let the planner handle the whole request
+        action, what = one
+        if action.label in seen:
+            continue
+        seen.add(action.label)
+        check = {"type": "process_running", "name": list(action.procs), "wait": 10}
+        steps.append({"id": f"open{len(steps) + 1}" if len(parts) > 1 else "open", "tool": "desktop.open", "args": {"target": what}, "deps": [], "verify": dict(check)})
+        checks.append(check)
+        labels.append(action.label)
+    return {"steps": steps, "success": checks, "reflex": "open", "label": " and ".join(labels)}

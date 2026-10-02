@@ -14,6 +14,10 @@ from praxis.tools import ToolError, ToolRuntime, Workspace
 from praxis.verifiers import verify
 
 
+def op_for_tests():
+    return op.Opener(tempfile.mkdtemp())
+
+
 class FakeLauncher:
     def __init__(self, fail=None):
         self.started, self.fail = [], fail
@@ -184,6 +188,15 @@ class Verifier(unittest.TestCase):
 
 
 class Reflexes(unittest.TestCase):
+    def test_compound_requests_split_but_anything_unclear_goes_to_the_planner(self):
+        o = op_for_tests()
+        p = reflex.match("open chrome, notepad and calculator", o)
+        self.assertEqual([x["args"]["target"] for x in p["steps"]], ["chrome", "notepad", "calculator"])
+        self.assertEqual(len(p["success"]), 3)
+        self.assertEqual(len(reflex.match("open chrome and chrome", o)["steps"]), 1)
+        for t in ("open chrome and delete my files", "open chrome and explain mutexes", "open notepad and type hello", "open a b c d e and chrome"):
+            self.assertIsNone(reflex.match(t, o), t)
+
     def match(self, text):
         return reflex.match(text, op.Opener(tempfile.mkdtemp(), FakeLauncher(), FakeProcs()))
 
@@ -223,6 +236,24 @@ class EndToEnd(unittest.TestCase):
         self.assertEqual(ex.opener.launcher.started[0][0], "app")
         self.assertTrue(any(e.type == "verify.result" and "process_running" in e.payload["claim"] and e.payload["passed"] for e in self.log.all()))
         self.assertTrue(self.log.verify_chain())
+
+    def test_two_things_in_one_sentence_open_both_with_no_model_and_each_is_verified(self):
+        procs = tuple(p for n in ("chrome", "notepad") for p in op_for_tests().resolve(n).procs)
+        ex, prov = self.executive(show=procs)
+        r = ex.run("Open Google Chrome and then Notepad please.")
+        self.assertEqual(r.status, VERIFIED, r.reason)
+        self.assertEqual(len(prov.calls) if hasattr(prov, "calls") else 0, 0)
+        self.assertEqual([k[0] for k in ex.opener.launcher.started], ["app", "app"])
+        proofs = [e for e in self.log.all() if e.type == "verify.result" and "process_running" in e.payload["claim"] and e.payload["passed"]]
+        self.assertGreaterEqual(len(proofs), 2)
+        self.assertNotIn("model.try", [e.type for e in self.log.all()])
+
+    def test_if_the_second_program_never_appears_the_whole_goal_is_not_done(self):
+        chrome = op_for_tests().resolve("chrome").procs
+        ex, _ = self.executive(show=chrome)
+        with mock.patch.object(op.Processes, "running", side_effect=lambda names: any(n.lower() in [c.lower() for c in chrome] for n in names)):
+            r = ex.run("open chrome and notepad")
+        self.assertEqual(r.status, FAILED)
 
     def test_if_the_program_never_appears_it_is_reported_as_failed_not_done(self):
         ex, _ = self.executive(show=("something-else.exe",))
