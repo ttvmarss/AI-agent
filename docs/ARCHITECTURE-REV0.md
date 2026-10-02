@@ -1429,7 +1429,7 @@ never a hard block). **Escalation:** if a goal's checks fail on the work itself 
 scratch*: nothing observed by the weaker attempt is carried over, so untrusted content cannot steer the retry; at most 2 escalations,
 never to a model that was already tried.
 
-**42.5 The command center (`praxis/desktop/qt/`, PySide6; Tk remains the fallback).** The window is still only a projection of the
+**42.5 The command center (`praxis/desktop/qt/`, PySide6; Tk remains the fallback).** *Revision: the owner asked for no co-pilot-style chrome, so the app is ONE screen: the core plus a single prompt line (Enter runs, Esc stops, F2/F3 cycle data class and frugality, Ctrl+O/Ctrl+R folder/resume). The earlier pages (Timeline, Fuel, Models, Memory, System), nav rail, header switches and key dialog were removed; their functions remain on the CLI (`why`, `verify-log`, `free`, `keys`, `hardware`, `pull`, `bench`).* The window is still only a projection of the
 event log plus the router's state (design law 3). Its centre is **The Loom** (`particles.py`, pure math; `core.py`, painting), an
 original design in the particle-intelligence idiom rather than a copy of a reference: about 2,500 points in a spiral-arm galaxy
 (three arms on a logarithmic spiral, a sparse halo, a lens-flare seed, comet tails, warm sparks) crossed by three gimbal rings.
@@ -1445,8 +1445,8 @@ extent so nodes never touch a ring and the widest ring always fits. Rendering: e
 buffer which is bloomed (two blurred copies added back); the aura is cached; calm states tick at 24 fps; a `Quality` governor steps
 the particle count down (2500 / 1700 / 1100 / 600, never back up, so it cannot flap) when frames stay slow and drops the bloom at
 the lower levels; `PRAXIS_REDUCE_MOTION=1` slows everything. The simulation is stepped with `advance(dt)` (clamped so a stalled frame
-cannot jump), so previews and tests drive it deterministically. The DATA and FRUGALITY header switches write straight into the
-controller and router and are re-synchronised from the router when a stack loads. The Qt package imports nothing from Tk; the
+cannot jump), so previews and tests drive it deterministically. F2 and F3 cycle the data class and the frugality straight into the
+controller and router (the footer under the core always shows what will run). The Qt package imports nothing from Tk; the
 approval wording lives in a toolkit-free module so both shells agree.
 
 **42.6 Evidence.** 448 tests in the suite. On Python 3.11 with PySide6 6.11 all 448 run (432 execute; the 16 Tk window tests skip

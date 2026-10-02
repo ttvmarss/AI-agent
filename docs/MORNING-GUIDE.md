@@ -71,7 +71,7 @@ Copy `praxis.toml.example` to **`%USERPROFILE%\.praxis\praxis.toml`**. This is t
 ## 4b. Free AIs: keep working when Claude runs out, and use Claude less
 
 PRAXIS can route to free cloud tiers and to local models, so a spent Claude window does not stop you and routine work does not burn it.
-**Every free tier needs a free API key** (sign-up is on each vendor's site; the **Fuel** page has a *Get a free key* and *Add key...* button per tier, or run `python -m praxis keys set groq`).
+**Every free tier needs a free API key** (sign-up is on each vendor's site; then run `python -m praxis keys set groq`, and `python -m praxis free` lists every tier with its limits, data terms and signup link).
 Keys are stored only in `%USERPROFILE%\.praxis\secrets.json`, never in the event log, the workspace, or any error message.
 
 | Tier | Free limit (read 2026-10-02) | What it does with your prompts | Class |
@@ -87,12 +87,12 @@ Keys are stored only in `%USERPROFILE%\.praxis\secrets.json`, never in the event
 `python -m praxis free` prints the same table with a source link for every number. **Limits change; a 429 from the provider always overrides these figures.**
 Paths I checked and **did not build on because they no longer exist**: Gemini CLI's free Google-login tier (ended 2026-06-18), Qwen Code's free OAuth (ended 2026-04-15), GitHub Models' free API (retired 2026-07-30).
 
-**Two switches in the window's header control all of this:**
+**Two keys control all of this (the footer under the core always shows the current setting):**
 
-* **DATA** says what a goal may touch. **PRIVATE** = local models only, nothing leaves the PC. **PROJECT** (default) = local + trusted cloud (Claude, ChatGPT, Groq, Cerebras...). **OPEN** = also the free tiers that may train on prompts. Even at OPEN, a prompt that contains something shaped like a password, API key or private key is never sent to an open tier.
-* **FRUGALITY** says how to spend. **QUALITY** = best model regardless of cost. **BALANCED** = best first, and once benchmarked the cheapest that is as good. **FRUGAL** = local model first, then free tiers, then Claude from small to large; if a cheaper model's work **fails verification**, PRAXIS restores the workspace and retries with the next stronger one (max 2 escalations). This is how Claude gets used less.
+* **F2: DATA** says what a goal may touch. **PRIVATE** = local models only, nothing leaves the PC. **PROJECT** (default) = local + trusted cloud (Claude, ChatGPT, Groq, Cerebras...). **OPEN** = also the free tiers that may train on prompts. Even at OPEN, a prompt that contains something shaped like a password, API key or private key is never sent to an open tier.
+* **F3: FRUGALITY** says how to spend. **QUALITY** = best model regardless of cost. **BALANCED** = best first, and once benchmarked the cheapest that is as good. **FRUGAL** = local model first, then free tiers, then Claude from small to large; if a cheaper model's work **fails verification**, PRAXIS restores the workspace and retries with the next stronger one (max 2 escalations). This is how Claude gets used less.
 
-When a provider says "limit reached", it rests until the time the provider states (Retry-After or the reset text), and the next one in the ladder takes over. The **Fuel** page shows the ladder, each model's usage in the last 5 hours, 24 hours and 7 days, and the budgets you set under `[budgets]` in your config.
+When a provider says "limit reached", it rests until the time the provider states (Retry-After or the reset text), and the next one in the ladder takes over. `python -m praxis free` and the config's `[budgets]` section show and set each model's allowance; the core shows each AI's spent share as an arc.
 
 ## 5. First launch
 
@@ -107,21 +107,21 @@ Double-click the **PRAXIS** shortcut. The window opens on **Mission**, and the f
 * **Your AIs flank it**: free and local on the left, subscriptions on the right. The arc on each is how much of its allowance is spent, a clock hand means it is resting after a limit, hollow means this goal's DATA setting forbids it. Hover one for details.
 * Move the mouse and the whole galaxy tilts toward it; click it and it answers. On a slow machine it quietly drops to fewer particles (never back up, so it cannot flicker); set `PRAXIS_REDUCE_MOTION=1` for a calmer, lower-power version.
 
-1. **Fuel**: add a free key or two (Groq and Cerebras are trusted tiers). **Models → Download** the recommended local models. **System** shows each provider, its measured score and cost, and the sandbox state.
-2. Run **`python -m praxis bench --max-cost 3`** (or the benchmark button on Models). This sends test tasks to every available model and writes measured quality, speed and cost to the registry. After that the router picks **the cheapest model that is as good as the best**. Heads-up: this uses real subscription usage; the `--max-cost` cap stops new providers once the estimate passes it.
-3. Try a safe first goal on a scratch folder (**Open folder…** → make a new empty folder):
+1. Add a free key or two (Groq and Cerebras are trusted tiers): `python -m praxis keys set groq`. Download the recommended local models: `python -m praxis hardware`, then `python -m praxis pull <tag>`.
+2. Run **`python -m praxis bench --max-cost 3`**. This sends test tasks to every available model and writes measured quality, speed and cost to the registry. After that the router picks **the cheapest model that is as good as the best**. Heads-up: this uses real subscription usage; the `--max-cost` cap stops new providers once the estimate passes it.
+3. Try a safe first goal on a scratch folder (**Ctrl+O** → make a new empty folder):
    * *"Create hello.txt containing exactly: Hello, Stark"*
    * *"Write a Python function slugify(text) in slug.py with a unit test, and run the tests."*
    * *"Read notes.txt and write a one-sentence summary to summary.txt."*
 
 ## 6. How to use it safely
 
-* **STOP (Ctrl+.)** is always live. It kills in-flight model calls, stops before the next step, and **restores the workspace** to how it was before the goal.
+* **STOP (Esc, or Ctrl+.)** is always live. It kills in-flight model calls, stops before the next step, and **restores the workspace** to how it was before the goal.
 * **Approval dialogs show the exact action** and default to **Deny**. Anything that sends your files to a cloud agent, spends money, or runs code without a proven sandbox asks you first. Closing the dialog or pressing Esc is a refusal.
 * **A plan built from file contents can never exceed reversible actions**, even if you click "approve": this is what stops a malicious line inside a document from driving the machine.
 * **What VERIFIED means:** the goal passed the checks listed under *Evidence*, and the Guard allowed every step. It does **not** prove the checks match what you meant. If a goal is ambiguous the model may write checks that encode a misreading (in a live test, "exactly: Hello, Stark. Then create..." produced `Hello, Stark.` with the period). Read the Evidence for important work, state exact values, and keep the *Second-opinion critic* on when you have two vendors installed.
-* **Timeline → "Why did you do that?"** shows the causal chain for any action. **Verify log integrity** proves the history was not edited.
-* **Resume**: if the app or PC dies mid-goal, the next launch offers *Resume interrupted goal*.
+* **`python -m praxis why <event>`** shows the causal chain for any action; **`python -m praxis verify-log`** proves the history was not edited.
+* **Resume**: if the app or PC dies mid-goal, the next launch says so on the core; **Ctrl+R** resumes it.
 * Everything is stored in `<your folder>\.praxis\` (event log, checkpoints, registry). PRAXIS refuses to read or write that folder, `.git`, or `praxis.toml` on a plan's behalf.
 
 ## 7. What is verified, and what is not
@@ -140,9 +140,9 @@ Double-click the **PRAXIS** shortcut. The window opens on **Mission**, and the f
 | Symptom | Do this |
 |---|---|
 | Window will not open | `python -m praxis.desktop` in a terminal shows the error. Plain-looking window? `py -3 -m pip install --user PySide6-Essentials` for the full one. `--tk` forces the plain one |
-| A free tier says NOT SET UP | it has no key yet: Fuel → *Add key...* (or `python -m praxis keys set <name>`) |
-| The core is hollow on a model | the DATA switch forbids it for this goal (e.g. PRIVATE blocks every cloud model) |
-| Claude is always used first | set FRUGALITY to FRUGAL, and add free keys / pull a local model so there is something cheaper to try first |
+| A free tier is missing | it has no key yet: `python -m praxis keys set <name>` (`python -m praxis free` lists them) |
+| The core is hollow on a model | the data class (F2) forbids it for this goal (e.g. PRIVATE blocks every cloud model) |
+| Claude is always used first | press F3 until the footer says FRUGAL, and add free keys / pull a local model so there is something cheaper to try first |
 | A provider shows `SKIPPED` | `python -m praxis doctor` prints the reason (not installed / not logged in / Ollama not running) |
 | Everything asks for approval | No proven sandbox: install Docker Desktop and run `docker pull python:3.11-slim`, then System → *Re-run sandbox self-attack* |
 | Local model is slow | System/Models show measured tok/s; lower `num_ctx` in your user `praxis.toml`, set the Ollama variables above, or pick the 8B helper |

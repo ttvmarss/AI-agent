@@ -1,6 +1,4 @@
 """Approval and key dialogs. The approval dialog shows the EXACT action and defaults to Deny."""
-import webbrowser
-
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QVBoxLayout)
 
@@ -43,37 +41,3 @@ class ApprovalDialog(QDialog):
     def reject(self):   # Esc, the title-bar X, Alt+F4: all refusals
         self.answer = False
         super().reject()
-
-
-class KeyDialog(QDialog):
-    def __init__(self, parent, preset, existing=False):
-        super().__init__(parent)
-        self.preset, self.value = preset, ""
-        self.setWindowTitle(f"{preset.label}: API key")
-        self.setModal(True)
-        self.setMinimumWidth(560)
-        lay = QVBoxLayout(self); lay.setContentsMargins(26, 22, 26, 22); lay.setSpacing(10)
-        h = QLabel(preset.label); h.setObjectName("h1"); lay.addWidget(h)
-        trust = ("TRUSTED: its documented terms say your API data is not used for training."
-                 if preset.privacy == "cloud" else
-                 "OPEN: the free tier may log, train on, or have humans read prompts. PRAXIS only uses it for goals you mark "
-                 "Open, and never when a credential is detected in the prompt.")
-        t = QLabel(trust); t.setWordWrap(True); t.setStyleSheet(f"color: {C['ok'] if preset.privacy == 'cloud' else C['warn']};")
-        lay.addWidget(t)
-        c = QLabel(preset.caveat); c.setObjectName("muted"); c.setWordWrap(True); lay.addWidget(c)
-        self.edit = QLineEdit(); self.edit.setEchoMode(QLineEdit.Password)
-        self.edit.setPlaceholderText("paste the key here (stored only in your private key file)")
-        lay.addWidget(self.edit)
-        row = QHBoxLayout()
-        get = QPushButton("Get a free key"); get.setObjectName("ghost")
-        get.clicked.connect(lambda: webbrowser.open(preset.signup_url))
-        row.addWidget(get); row.addStretch()
-        cancel = QPushButton("Cancel"); cancel.setObjectName("ghost"); cancel.clicked.connect(self.reject)
-        save = QPushButton("Save key"); save.setObjectName("primary"); save.clicked.connect(self._save)
-        row.addWidget(cancel); row.addWidget(save); lay.addLayout(row)
-
-    def _save(self):
-        v = self.edit.text().strip()
-        if len(v) >= 8:
-            self.value = v
-            self.accept()

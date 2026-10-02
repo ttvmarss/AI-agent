@@ -35,15 +35,16 @@ goal -> recall (memory) -> plan (model A) -> observe files (labeled UNTRUSTED) -
   documented data terms and the source of its limits (`python -m praxis free`).
 * **Hardware-aware local models**: reads your real VRAM/RAM, models speed with bandwidth physics (MoE vs dense), then
   *measures* tokens/s and quality. Dated, sourced catalog of Ollama models.
-* **Desktop command center** (PySide6): the core is **The Loom**, a galaxy of ~2,500 glowing particles streaming along spiral
-  arms around a lens-flare seed, crossed by three gimbal rings that are the kernel's real pipeline: **PLAN** (outer),
-  **ACT** (one arc per real step, coloured by its state) and **VERIFY** (one arc per real check; it seals into a closed green
-  ring when the goal verifies). The arms flow *inward* while it works, hold still when it needs you, and burst *outward* on
-  VERIFIED; the colour is the state; every real event flares the seed and ripples through the galaxy; a particle stream runs
-  to the provider being called right now; the latest event is typed out in a caption. Your AIs flank it with budget arcs, rest
-  clocks and data-class blocks. Plus the plan as a dependency graph, a **Fuel** page with the failover ladder and usage per
-  model, DATA and FRUGALITY switches, timeline with "why", models, live CPU/RAM/GPU/VRAM, approval dialogs that show the exact
-  action and default to Deny, and **STOP**. It lowers its own detail on slow machines and honours `PRAXIS_REDUCE_MOTION=1`.
+* **The app is one screen: the core.** No menus, pages or panels. The window is **The Loom** (PySide6), a galaxy of ~2,500 glowing
+  particles streaming along spiral arms around a lens-flare seed, crossed by three gimbal rings that are the kernel's real
+  pipeline: **PLAN** (outer), **ACT** (one arc per real step, coloured by its state) and **VERIFY** (one arc per real check; it
+  seals into a closed green ring when the goal verifies). The arms flow *inward* while it works, hold still when it needs you, and
+  burst *outward* on VERIFIED; the colour is the state; every real event flares the seed and ripples through the galaxy; a particle
+  stream runs to the provider being called right now; the latest event is typed out in a caption; your AIs flank it with budget
+  arcs, rest clocks and data-class blocks; the live routing and data settings sit in the footer. One prompt line under it takes your
+  outcome (Enter); **Esc** stops (kills in-flight calls, restores the workspace), **F2** cycles the data class, **F3** the
+  frugality, **Ctrl+O** opens a folder, **Ctrl+R** resumes. Approval dialogs show the exact action and default to Deny. It lowers
+  its own detail on slow machines and honours `PRAXIS_REDUCE_MOTION=1`. (Without PySide6 a plainer Tk fallback window opens.)
 
 ## Run
 
