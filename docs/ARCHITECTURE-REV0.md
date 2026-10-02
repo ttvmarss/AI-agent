@@ -1260,4 +1260,25 @@ Standing questions: *Strongest architecture, or merely the usual one?* · *What 
 2. Run the five Phase 0 spikes (replay determinism; shell-command classification; GUI reliability baseline; router eval design; taint-tracking feasibility).
 3. Freeze contract v0.1 and begin PRAXIS-0 (§34) under test-first discipline.
 
+## 38. Status addendum — PRAXIS-0 built (2026-10-02)
+
+**Defaults taken on the open decisions (reversible; recorded as Decisions):** cloud providers first behind the adapter
+interface (Anthropic adapter + scripted provider for deterministic tests); CPU-only; **Coding Lab first**; stdlib-only kernel.
+
+**Built:** `praxis/` — `events.py` (hash-chained log), `guard.py` (Class 0–5, fail-closed shell analyzer, taint rule),
+`tools.py` (workspace-confined tools, checkpoint/rollback), `verifiers.py`, `router.py`, `executive.py`, CLI.
+
+**Evidence:** 39 unit/adversarial tests pass. Mutation check: breaking the shell classifier, verifier gate, rollback,
+hash-chain check, taint rule, replan-approval rule, or unknown-verifier default each makes the suite fail (7/7 killed).
+`evals/run_eval.py` (20 tasks, scripted model): PRAXIS-0 10/10 normal, 0 unauthorized actions, 0 false "done", 0 corrupted
+state; the naive loop gets 9/10, executes 4 of 5 attack steps (the 5th is a network call that cannot succeed offline), claims completion on 2 faulty tasks, and corrupts state once.
+
+**Design decision made while building (Failure-log style):** F-006 — *taint-denies-all-replans* made the fix-and-retry loop
+useless (a model cannot repair code if every post-observation step is read-only). **Change:** replans derived from
+untrusted observations are allowed only after a human approves the concrete proposed plan; each step then still passes the Guard.
+
+**Not yet proven (honest):** H1 against a live model (needs API access and the real A/B); crash-resume; OS-level
+sandboxing; goal-level checkpoints copy the whole workspace (fine for small projects, not for large repos); the shell
+allowlist is deliberately narrow and will need widening with evidence. These are the Phase 1/5 gates and remain open.
+
 *End of Revision Zero. Revision One is due after the Phase 0 spikes report; failures get logged, not hidden.*

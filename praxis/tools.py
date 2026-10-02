@@ -1,0 +1,105 @@
+"""Tool runtime: workspace-confined tools plus checkpoint/rollback (the recovery primitive)."""
+import os
+import shutil
+import subprocess
+import uuid
+
+_SKIP = {".praxis", ".git"}
+MAX_OUT = 20000
+
+
+class ToolError(Exception):
+    pass
+
+
+class Workspace:
+    def __init__(self, root):
+        self.root = os.path.realpath(root)
+        os.makedirs(self.root, exist_ok=True)
+        self.ckpt_dir = os.path.join(self.root, ".praxis", "checkpoints")
+
+    def resolve(self, rel):
+        p = os.path.realpath(os.path.join(self.root, rel))
+        if p != self.root and not p.startswith(self.root + os.sep):
+            raise ToolError(f"path escapes workspace: {rel}")  # defense in depth behind the Guard
+        return p
+
+    # -- recovery -----------------------------------------------------------
+    def checkpoint(self):
+        cid = uuid.uuid4().hex[:12]
+        dest = os.path.join(self.ckpt_dir, cid)
+        os.makedirs(dest)
+        for name in os.listdir(self.root):
+            if name in _SKIP:
+                continue
+            src = os.path.join(self.root, name)
+            if os.path.isdir(src) and not os.path.islink(src):
+                shutil.copytree(src, os.path.join(dest, name), symlinks=True)
+            else:
+                shutil.copy2(src, os.path.join(dest, name), follow_symlinks=False)
+        return cid
+
+    def rollback(self, cid):
+        src = os.path.join(self.ckpt_dir, cid)
+        if not os.path.isdir(src):
+            raise ToolError(f"unknown checkpoint {cid}")
+        for name in os.listdir(self.root):
+            if name in _SKIP:
+                continue
+            p = os.path.join(self.root, name)
+            if os.path.isdir(p) and not os.path.islink(p):
+                shutil.rmtree(p)
+            else:
+                os.unlink(p)
+        for name in os.listdir(src):
+            s = os.path.join(src, name)
+            d = os.path.join(self.root, name)
+            if os.path.isdir(s) and not os.path.islink(s):
+                shutil.copytree(s, d, symlinks=True)
+            else:
+                shutil.copy2(s, d, follow_symlinks=False)
+
+    # -- tools --------------------------------------------------------------
+    def fs_read(self, path):
+        with open(self.resolve(path), "r", errors="replace") as f:
+            return f.read(MAX_OUT)
+
+    def fs_list(self, path="."):
+        return sorted(n for n in os.listdir(self.resolve(path)) if n not in _SKIP)
+
+    def fs_write(self, path, content):
+        p = self.resolve(path)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w") as f:
+            f.write(content)
+        return f"wrote {len(content)} bytes to {path}"
+
+    def shell_run(self, cmd, timeout=60):
+        import shlex
+        proc = subprocess.run(shlex.split(cmd), cwd=self.root, capture_output=True, text=True,
+                              timeout=timeout, shell=False)
+        out = (proc.stdout + proc.stderr)[-MAX_OUT:]
+        return {"returncode": proc.returncode, "output": out}
+
+
+class ToolRuntime:
+    def __init__(self, workspace):
+        self.ws = workspace
+        self.tools = {
+            "fs.read": lambda a: self.ws.fs_read(a["path"]),
+            "fs.list": lambda a: self.ws.fs_list(a.get("path", ".")),
+            "fs.write": lambda a: self.ws.fs_write(a["path"], a["content"]),
+            "shell.run": lambda a: self.ws.shell_run(a["cmd"], a.get("timeout", 60)),
+        }
+
+    def run(self, tool, args):
+        if tool not in self.tools:
+            raise ToolError(f"unknown tool {tool}")
+        try:
+            return self.tools[tool](args)
+        except ToolError:
+            raise
+        except subprocess.TimeoutExpired:
+            raise ToolError("timeout")
+        except Exception as e:  # tool failures are data, not crashes
+            raise ToolError(f"{type(e).__name__}: {e}")
