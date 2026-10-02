@@ -10,6 +10,9 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []   # standard library only, by design
 
+[project.optional-dependencies]
+ui = ["PySide6-Essentials>=6.7"]   # the command-center window; without it PRAXIS falls back to a basic Tk window
+
 [project.scripts]
 praxis = "praxis.__main__:main"
 
@@ -17,4 +20,4 @@ praxis = "praxis.__main__:main"
 praxis-desktop = "praxis.desktop.__main__:main"   # pip creates praxis-desktop.exe on Windows (no console window)
 
 [tool.setuptools]
-packages = ["praxis", "praxis.desktop"]
+packages = ["praxis", "praxis.desktop", "praxis.desktop.qt"]

@@ -13,6 +13,7 @@ class StepView:
     summary: str
     cls: int = 0
     state: str = "pending"   # pending running waiting ran verified denied failed rolled back
+    deps: list = field(default_factory=list)
 
 
 @dataclass
@@ -27,6 +28,7 @@ class View:
     cost: float = 0.0
     checkpoint: str = ""
     tainted: bool = False
+    active_provider: str = ""   # set while a model call is in flight (model.try without its model.call yet)
 
 
 def _args_summary(tool, args):
@@ -66,6 +68,8 @@ def summarize(e):
     if t == "escalation":
         return (f"Escalating (attempt {p.get('attempt')}): {p.get('from')} failed verification, trying a stronger model "
                 f"- {str(p.get('reason', ''))[:100]}"), "warn"
+    if t == "model.try":
+        return f"Asking {p.get('provider')} ({p.get('role', '?')})...", "info"
     if t == "plan.proposed":
         return "Model proposed a plan (raw output recorded)", "info"
     if t == "plan.accepted":
@@ -126,15 +130,19 @@ def build_view(events):
         if t == "goal.intent":
             v.goal_text = p.get("text", "")
         elif t == "plan.accepted":
-            v.steps = [StepView(s["id"], s["tool"], _args_summary(s["tool"], s.get("args")))
+            v.steps = [StepView(s["id"], s["tool"], _args_summary(s["tool"], s.get("args")), deps=list(s.get("deps", [])))
                        for s in p.get("plan", {}).get("steps", [])]
             v.evidence, v.rolled_back, v.tainted = [], False, bool(p.get("tainted"))
             v.status = "PLANNING"
         elif t == "checkpoint":
             v.checkpoint = p.get("id", "")
             v.status = "RUNNING"
+        elif t == "model.try":
+            v.active_provider = p.get("provider", "")
         elif t == "model.call":
             v.cost += float(p.get("cost_usd") or 0)
+            if p.get("provider") == v.active_provider:
+                v.active_provider = ""
         elif t == "step.intent":
             s = _step(v, p.get("step"))
             if s:
@@ -167,6 +175,7 @@ def build_view(events):
                 if s.state in ("ran", "verified", "running"):
                     s.state = "rolled back"
         elif t == "goal.report":
+            v.active_provider = ""
             v.status = p.get("status", "FAILED")
             v.reason = p.get("reason", "")
             v.rolled_back = v.rolled_back or bool(p.get("rolled_back"))

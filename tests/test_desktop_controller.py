@@ -5,6 +5,7 @@ from praxis.hardware import GB, GPU, Profile
 from praxis.registry import Registry
 from praxis.router import Router, ScriptedProvider
 from praxis.sandbox import Sandbox
+from praxis.usage import UsageTracker
 from tests.test_executive import plan, W
 
 
@@ -17,7 +18,7 @@ def fake_stack(responses, agents=None, hook=None):
     cfg = {"limits": {"max_steps": 20, "max_model_calls": 8, "max_cost_usd": 0}, "privacy": {"data_class": "project"}}
     return types.SimpleNamespace(
         providers=[prov], router=Router([prov]), agents=agents or {}, sandbox=Sandbox(), cfg=cfg, registry=Registry(),
-        skipped={"codex": "not installed"}, profile=Profile("linux", "cpu", 4, 16 * GB, 50, []), prov=prov)
+        skipped={"codex": "not installed"}, usage=UsageTracker(), profile=Profile("linux", "cpu", 4, 16 * GB, 50, []), prov=prov)
 
 
 def wait(pred, t=8.0):

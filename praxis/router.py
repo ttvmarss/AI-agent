@@ -230,6 +230,8 @@ class Router:
                                                    "reason": f"possible secret in prompt ({', '.join(secrets_found)}); "
                                                              "open tiers never see credentials"})
                     continue
+            if on_event:  # lets a UI show which provider is being asked RIGHT NOW (the call itself can take seconds)
+                on_event("model.try", {"provider": p.card.name, "role": role})
             try:
                 out = p.complete(role, messages)
             except (RateLimited, ModelUnavailable) as e:

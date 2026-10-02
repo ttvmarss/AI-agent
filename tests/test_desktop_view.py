@@ -111,3 +111,39 @@ class Telemetry(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ActiveProvider(unittest.TestCase):
+    """The core visualization lights a provider only while a call to it is really in flight."""
+
+    def test_router_announces_each_attempt_before_making_it(self):
+        from praxis.router import Router, ScriptedProvider, ProviderError
+        a, b = ScriptedProvider([ProviderError("down")], name="a"), ScriptedProvider(["ok"], name="b")
+        ev = []
+        Router([a, b], {"planner": ["a", "b"]}).call("planner", [], on_event=lambda t, p: ev.append((t, p["provider"])))
+        self.assertEqual([e for e in ev if e[0] in ("model.try", "model.call")],
+                         [("model.try", "a"), ("model.call", "a"), ("model.try", "b"), ("model.call", "b")])
+
+    def test_view_marks_the_provider_in_flight_and_clears_it_when_the_call_returns(self):
+        log = EventLog()
+        i = log.append("g", "user", "goal.intent", {"text": "t"})
+        log.append("g", "router", "model.try", {"provider": "groq/x", "role": "planner"}, [i])
+        self.assertEqual(build_view(log.all()).active_provider, "groq/x")
+        log.append("g", "router", "model.call", {"provider": "groq/x", "role": "planner", "ok": True}, [i])
+        self.assertEqual(build_view(log.all()).active_provider, "")
+        log.append("g", "router", "model.try", {"provider": "claude/y", "role": "critic"}, [i])
+        log.append("g", "router", "model.call", {"provider": "claude/y", "role": "critic", "ok": False, "error": "x"}, [i])
+        self.assertEqual(build_view(log.all()).active_provider, "")
+
+    def test_steps_carry_their_dependencies_for_the_graph(self):
+        log = EventLog(); i = log.append("g", "user", "goal.intent", {"text": "t"})
+        steps = [{"id": "a", "tool": "fs.read", "args": {"path": "x"}, "deps": [], "verify": {"type": "none"}},
+                 {"id": "b", "tool": "fs.write", "args": {"path": "y", "content": ""}, "deps": ["a"], "verify": {"type": "none"}}]
+        log.append("g", "executive", "plan.accepted", {"plan": {"steps": steps, "success": []}, "initial": True, "tainted": False}, [i])
+        v = build_view(log.all())
+        self.assertEqual([s.deps for s in v.steps], [[], ["a"]])
+
+    def test_try_events_have_a_quiet_human_summary(self):
+        log = EventLog(); i = log.append("g", "router", "model.try", {"provider": "groq/x", "role": "planner"})
+        text, level = summarize(log.get(i))
+        self.assertIn("groq/x", text); self.assertEqual(level, "info")

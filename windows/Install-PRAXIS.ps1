@@ -28,6 +28,22 @@ if ($pyOk) {
     }
 }
 
+# 1b. The command-center window (PySide6). Optional: without it PRAXIS opens a basic Tk window instead.
+if ($pyOk) {
+    $qt = & py -3 -c "import PySide6.QtWidgets; print(1)" 2>$null
+    if ($qt -eq "1") {
+        Say "[ok]   Command-center UI (PySide6)" Green
+    } else {
+        Say "[miss] Command-center UI (PySide6, about 150 MB; without it you get a basic window)" Yellow
+        $a = Read-Host "Install it now with pip (for your user only)? (y/N)"
+        if ($a -eq "y") {
+            & py -3 -m pip install --user "PySide6-Essentials>=6.7"
+            $qt = & py -3 -c "import PySide6.QtWidgets; print(1)" 2>$null
+            if ($qt -eq "1") { Say "[ok]   Command-center UI installed" Green } else { Say "[warn] Install failed; PRAXIS will use the basic window." Yellow }
+        }
+    }
+}
+
 # 2. The AI tools (each is optional; PRAXIS uses whatever it finds)
 $tools = @(
     @{ n = "claude";     d = "Claude subscription   (install: irm https://claude.ai/install.ps1 | iex   then run: claude)" },
@@ -60,4 +76,4 @@ if ($pyOk) {
     & py -3 -m praxis doctor
     Pop-Location
 }
-Say "`nNext: open the PRAXIS shortcut. First time, visit the Models page, then System." Cyan
+Say "`nNext: open the PRAXIS shortcut. First time, visit the Fuel page (add free keys so PRAXIS can use less Claude), then Models." Cyan

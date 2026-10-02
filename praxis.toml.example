@@ -39,6 +39,36 @@ balanced = ""
 best = "claude-fable-5.1"       # Factory's id format uses a dot
 balanced = ""
 
+# FREE CLOUD TIERS (use Claude less, and keep working when a Claude window is spent). Each needs a free key:
+#   praxis free              lists them with limits, data terms and where the numbers came from
+#   praxis keys set groq     stores a key in ~/.praxis/secrets.json (0600); or use the env var shown in `praxis free`
+#   (the desktop app's Fuel page has an "Add key" button for each)
+# privacy: TRUSTED tiers (groq, cerebras, ollama-cloud) document that API data is not used for training, so 'project' goals may use them.
+# OPEN tiers (gemini, mistral, nvidia, openrouter) may log or train on prompts: used only for goals you mark 'open', and never
+# when a credential-looking string is in the prompt. Set enabled = false to switch any tier off, or models = [...] to choose models.
+[providers.groq]
+enabled = true
+[providers.cerebras]
+enabled = true
+[providers.ollama-cloud]
+enabled = true
+[providers.gemini]
+enabled = true
+[providers.mistral]
+enabled = true
+[providers.nvidia]
+enabled = true
+[providers.openrouter]       # its free list changes weekly: `praxis free models openrouter`, then:
+enabled = true
+# models = ["<an id ending in :free>"]
+
+# Soft usage budgets: when a model's budget is spent it goes to the BACK of the line (a last resort), never blocks a goal.
+# keys: calls_ | cost_usd_ | tokens_ + 5h | 24h | 7d.  A family name ("claude") is one budget SHARED by all its models.
+# Free tiers get budgets automatically from their documented daily limits. Example (uncomment):
+# [budgets.claude]
+# cost_usd_5h = 8.0
+# calls_24h = 300
+
 [role_tiers]                # which tier each role prefers (until `praxis bench` has measured everything)
 planner   = ["balanced", "best", "fast"]
 replanner = ["balanced", "best", "fast"]
@@ -55,13 +85,21 @@ ram_bw_gbps = 0             # ~70 for dual-channel DDR5-5200 (default is a conse
 gpu_bw_gbps = 0             # auto from the card name (3050 8GB = 224, 3050 6GB = 168)
 
 [roles]                     # preference order per role (the router skips anything unavailable)
-planner   = ["claude", "codex", "droid", "ollama"]
-replanner = ["claude", "codex", "droid", "ollama"]
-critic    = ["codex", "claude", "droid", "ollama"]   # a DIFFERENT provider from the planner is always chosen
+planner   = ["claude", "codex", "droid", "ollama", "ollama-cloud", "groq", "cerebras", "gemini", "mistral", "nvidia", "openrouter"]
+replanner = ["claude", "codex", "droid", "ollama", "ollama-cloud", "groq", "cerebras", "gemini", "mistral", "nvidia", "openrouter"]
+critic    = ["codex", "claude", "droid", "groq", "cerebras", "ollama-cloud", "ollama", "gemini", "mistral", "nvidia", "openrouter"]   # a DIFFERENT family from the planner is always chosen
 
 [routing]
-strategy = "auto"           # auto: use measured `praxis bench` scores once every candidate has one; else the order above
-cooldown_s = 900            # subscription limit hit => provider rests this long, router falls back
+# "auto"     best quality first; once every candidate is benchmarked, the cheapest within 0.05 of the best wins
+# "frugal"   USE LESS CLAUDE: local model, then free tiers, then Claude small -> large. A cheaper model that fails
+#            verification is retried from scratch (workspace restored) by the next one up. Also the app's FRUGALITY switch.
+# "measured" highest benchmark score regardless of cost    |   "config" the [roles] order above
+strategy = "auto"
+cooldown_s = 900            # fallback rest time after a limit with no stated reset (the provider's Retry-After / reset text wins)
+slack = 0.25                # frugal: a measured model this far below the best measured one goes to the back
+min_quality = 0.6           # frugal: a measured model below this score goes to the back
+escalate = true             # retry a failed-verification goal with the next stronger model
+max_escalations = 2
 
 [limits]
 max_steps = 20

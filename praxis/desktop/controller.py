@@ -74,6 +74,8 @@ class Controller:
         self._on_executive_built = None  # test hook
         self.refusal = ""
         self._baseline = None
+        self.data_class = None   # None = whatever the config says; the UI's Private/Project/Open control sets it
+        self.frugality = None
         self.notes = []  # human-readable messages for the status bar (errors from the worker)
 
     # ---- state ---------------------------------------------------------------
@@ -100,6 +102,8 @@ class Controller:
         try:
             os.makedirs(os.path.join(self.workspace, ".praxis"), exist_ok=True)
             stack = self.stack_factory(self.workspace)
+            if self.frugality:   # the user's choice survives a rebuild (e.g. after adding a key)
+                stack.router.strategy = self.frugality
             with self._lock:
                 self._stack = stack
                 self.info = {"providers": [p.card.name for p in stack.providers], "skipped": dict(stack.skipped),
@@ -111,6 +115,14 @@ class Controller:
         except Exception as e:  # the UI shows this; the app must never die on a bad config
             with self._lock:
                 self._state, self.error = "error", f"{type(e).__name__}: {e}"
+
+    def reload(self):
+        """Rebuild the stack so a new key or config change takes effect. Never while a goal is running."""
+        with self._lock:
+            if self._state not in ("idle", "error"):
+                return False
+        self.start()
+        return True
 
     def open_workspace(self, path):
         self.refusal = workspace_problem(path) or ""
@@ -140,9 +152,32 @@ class Controller:
                          max_escalations=st.cfg.get("routing", {}).get("max_escalations", 2),
                          data_class=data_class or st.cfg["privacy"]["data_class"], sandbox=st.sandbox)
 
+    def set_data_class(self, dc):
+        self.data_class = dc
+
+    def set_strategy(self, strategy):
+        """quality -> measured | balanced -> auto | frugal -> frugal. Applies to the next call immediately."""
+        if self._stack is not None:
+            self._stack.router.strategy = strategy
+        self.frugality = strategy
+
+    def nodes(self):
+        from .nodes import provider_nodes
+        st = self._stack
+        return provider_nodes(st, self.effective_data_class()) if st is not None else []
+
+    def chain(self):
+        from .nodes import failover_chain
+        st = self._stack
+        return failover_chain(st, self.effective_data_class()) if st is not None else []
+
+    def effective_data_class(self):
+        st = self._stack
+        return self.data_class or (st.cfg["privacy"]["data_class"] if st is not None else "project")
+
     def submit(self, text, private=False, no_critic=False, data_class=None):
         """data_class: 'private' (local only) | 'project' (+ trusted cloud) | 'open' (+ free tiers that may train)."""
-        return self._launch(lambda ex: ex.run(text), "private" if private else data_class, no_critic)
+        return self._launch(lambda ex: ex.run(text), "private" if private else (data_class or self.data_class), no_critic)
 
     def resume(self):
         if not self.unfinished():
