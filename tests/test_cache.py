@@ -65,3 +65,17 @@ class Cache(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BuildInfo(unittest.TestCase):
+    def test_reads_commit_and_branch_from_a_git_folder_without_git(self):
+        import os, tempfile
+        from praxis import build
+        root = tempfile.mkdtemp(); g = os.path.join(root, ".git", "refs", "heads", "feat"); os.makedirs(g)
+        with open(os.path.join(root, ".git", "HEAD"), "w") as f: f.write("ref: refs/heads/feat/x\n")
+        os.makedirs(os.path.join(root, ".git", "refs", "heads", "feat"), exist_ok=True)
+        with open(os.path.join(root, ".git", "refs", "heads", "feat", "x"), "w") as f: f.write("abcdef1234567890\n")
+        self.assertEqual(build.info(root), ("abcdef1", "feat/x"))
+        with open(os.path.join(root, ".git", "HEAD"), "w") as f: f.write("0123456789abcdef\n")
+        self.assertEqual(build.info(root), ("0123456", "detached"))
+        self.assertEqual(build.info(tempfile.mkdtemp()), ("", ""))          # not a checkout: honest, no crash

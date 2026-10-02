@@ -15,6 +15,7 @@ from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (QApplication, QFileDialog, QLineEdit, QMainWindow, QMessageBox, QVBoxLayout, QWidget)
 
+from ... import build
 from ..view import View, summarize
 from . import theme
 from .core import CoreView
@@ -341,6 +342,7 @@ class MainWindow(QMainWindow):
         self._loaded_ws = c.workspace
         c.mark_read()
         self.setWindowTitle(f"PRAXIS - {os.path.basename(c.workspace) or c.workspace}")
+        self.core.add_log("BUILD  " + build.label(), "info")
         info = c.info
         n = len(info.get("providers", []))
         missing = ", ".join(sorted(info.get("skipped", {})))

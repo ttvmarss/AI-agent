@@ -24,7 +24,16 @@ def main(argv=None):
                   "or on Linux:  sudo apt install python3-tk")
             return 1
         if not force_tk:
-            print("Using the basic Tk window. For the full command center:  pip install PySide6-Essentials")
+            msg = ("PRAXIS opened its BASIC window because the command-center UI (PySide6) is not installed for this Python.\n\n"
+                   "To get the reactor screen, open a terminal and run:\n    py -3 -m pip install --user PySide6-Essentials\n\n"
+                   "(or double-click windows\\Update-PRAXIS.bat, which does it for you).")
+            print(msg)
+            try:                                  # pyw hides the console, so a message box is the only way anyone sees this
+                import tkinter
+                from tkinter import messagebox
+                r = tkinter.Tk(); r.withdraw(); messagebox.showwarning("PRAXIS: basic window", msg); r.destroy()
+            except Exception:
+                pass
     from .controller import Controller
     from .settings import Settings
     from .telemetry import Telemetry
