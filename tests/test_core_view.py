@@ -120,8 +120,8 @@ class Reactor(unittest.TestCase):
         for name, col in (("idle", idle), ("ok", ok), ("bad", bad), ("waiting", wait), ("working", work)):
             self.assertGreater(col[3], 150, f"{name}: the reactor core must actually be drawn")
         hue = lambda c: (c[0] - c[2])                                   # warm (positive) .. cool (negative)
-        self.assertLess(hue(work), hue(idle) + 10, f"working is the coolest/bluest: {work} vs {idle}")
-        self.assertLess(hue(work), 5, f"working reads as reactor blue: {work}")
+        self.assertGreater(hue(work), hue(idle) + 60, f"working is FRIDAY amber, far warmer than JARVIS idle: {work} vs {idle}")
+        self.assertLess(hue(idle), 5, f"idle reads as JARVIS ice-blue: {idle}")
         self.assertGreater(hue(ok), hue(idle) + 30, f"verified is gold, warmer than idle: {ok} vs {idle}")
         self.assertGreater(hue(wait), hue(idle) + 30, f"needs-you is orange, warmer than idle: {wait}")
         self.assertTrue(bad[0] > bad[1] * 1.2 and bad[0] > bad[2] * 1.2, f"failed is red: {bad}")
@@ -593,6 +593,21 @@ class Reactor(unittest.TestCase):
             c.set_state("working", 0, "RUNNING", ""); self.assertEqual(c.timer.interval(), 80)
             t0 = c.reactor.t; c.advance(0.2)
             self.assertAlmostEqual(c.reactor.t - t0, 0.04, places=3)
+
+    def test_the_mind_in_charge_is_lit_jarvis_while_idle_and_friday_while_working(self):
+        from PySide6.QtGui import QFont, QFontMetricsF
+        def lit(mode):
+            c = self.make(1280, 760); c.timer.stop(); c.set_state(mode, 0.0, mode.upper(), ""); step(c, 4.0)
+            img = render(c)
+            fm = QFontMetricsF(c._font(c.mono, 8, QFont.Bold, 2.5))
+            jw = fm.horizontalAdvance("JARVIS"); fw = fm.horizontalAdvance("FRIDAY"); x1 = 24 + jw + 34       # where the FRIDAY chip starts
+            def lum(box):
+                v = [0.3 * r + 0.59 * g + 0.11 * b for _, _, r, g, b in pixels(img, *box)]
+                return sum(v) / max(1, len(v))
+            return lum((38, 14, 38 + jw, 30)), lum((x1 + 14, 14, x1 + 14 + fw, 30))
+        j_idle, f_idle = lit("idle"); j_work, f_work = lit("working")
+        self.assertGreater(j_idle, f_idle * 1.5, (j_idle, f_idle))
+        self.assertGreater(f_work, j_work * 1.5, (j_work, f_work))
 
     def test_no_caption_plate_and_no_footer_line_are_drawn(self):
         c = self.make(); c.timer.stop(); c.set_state("idle", 0, "READY", "")

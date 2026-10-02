@@ -89,7 +89,8 @@ class StateEncoding(unittest.TestCase):
         tints = {m: tuple(s["tint"]) for m, s in RX.MODE.items() if m != "stopped"}
         self.assertEqual(len(set(tints.values())), len(tints))
         idle, work, wait, ok, bad = (RX.MODE[m]["tint"] for m in ("idle", "working", "waiting", "ok", "bad"))
-        self.assertTrue(idle[2] > idle[0] and work[2] > work[0])                   # reactor blue
+        self.assertTrue(idle[2] > idle[0])                                         # JARVIS: cool ice-blue while it listens and talks
+        self.assertTrue(work[0] > work[2] * 2 and work[1] < wait[1])               # FRIDAY: deeper orange while it executes (not the yellower 'needs you')
         self.assertTrue(wait[0] > wait[2] * 2 and wait[1] > wait[2])               # orange
         self.assertTrue(ok[0] > ok[2] and ok[1] > ok[2] + 50)                      # gold
         self.assertTrue(bad[0] > 200 and bad[1] < 100)                             # red
@@ -300,3 +301,29 @@ class Adaptive(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Persona(unittest.TestCase):
+    """Two minds in one core: JARVIS (conversation, cool) and FRIDAY (execution, warm). Driven only by the real state."""
+
+    def test_the_accent_glides_from_ice_blue_to_amber_when_work_starts_and_back_when_it_ends(self):
+        r = RX.Reactor(0)
+        r.dyn.set_mode("idle")
+        for _ in range(300): r.advance(1 / 30) if hasattr(r, "advance") else r.dyn.step(1 / 30)
+        cool = r.accent()
+        self.assertTrue(cool[2] > cool[0])
+        r.dyn.set_mode("working")
+        mid = None
+        for i in range(300):
+            r.dyn.step(1 / 30)
+            if i == 6: mid = r.accent()
+        warm = r.accent()
+        self.assertTrue(warm[0] > warm[2] * 2)
+        self.assertTrue(cool[0] < mid[0] < warm[0])                                   # it glides, it does not snap
+        r.dyn.set_mode("idle")
+        for _ in range(300): r.dyn.step(1 / 30)
+        self.assertTrue(r.accent()[2] > r.accent()[0])
+
+    def test_every_state_names_a_persona_in_range(self):
+        for m, spec in RX.MODE.items():
+            self.assertTrue(0.0 <= spec["persona"] <= 1.0, m)

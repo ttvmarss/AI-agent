@@ -1005,14 +1005,14 @@ class CoreView(QWidget):
                 hot = active or bool(sub) or nd["family"] == self._hover
                 label = DISPLAY.get(nd["family"], nd["family"]) + (f"  x{len(nd['models'])}" if len(nd["models"]) > 1 else "")
                 gap = nr + 12
-                x0 = pt.x() - gap - 130 if side < 0 else pt.x() + gap
+                x0 = pt.x() - gap - 190 if side < 0 else pt.x() + gap
                 al = Qt.AlignRight if side < 0 else Qt.AlignLeft
                 p.setFont(self._font(self.mono, 8, QFont.Bold, 1.5))
                 p.setPen(qc("text" if hot and not (dim or nd["blocked"]) else "muted" if not (dim or nd["blocked"]) else "dim"))
-                p.drawText(QRectF(x0, pt.y() - 17, 130, 16), al | Qt.AlignVCenter, label.upper())
+                p.drawText(QRectF(x0, pt.y() - 17, 190, 16), al | Qt.AlignVCenter, label.upper())
                 if sub:
                     p.setFont(self._font(self.ui, 8)); p.setPen(qc(subcol))
-                    p.drawText(QRectF(x0, pt.y() - 1, 130, 14), al | Qt.AlignVCenter, sub)
+                    p.drawText(QRectF(x0, pt.y() - 1, 190, 14), al | Qt.AlignVCenter, sub)
         finally:
             p.end()
         self._hit = hit
@@ -1086,6 +1086,30 @@ class CoreView(QWidget):
         p.setPen(QColor(c.red(), c.green(), c.blue(), a))
         p.drawText(rect, flags, text)
 
+    def _minds(self, p, g):
+        """Two minds, one core. JARVIS (conversation: cool, calm) and FRIDAY (execution: warm, tactical): whichever is in charge is lit, and
+        the corners are bracketed in its colour. Driven by the real state only: idle, listening and talking are JARVIS; working is FRIDAY."""
+        w, h = g["w"], g["h"]
+        k = RX.clamp(self.reactor.dyn.v["persona"])
+        acc = self.reactor.accent()
+        p.setBrush(Qt.NoBrush)
+        p.setPen(QPen(rgb(acc, 120), 1.3))
+        L, m = 26, 7
+        for sx, x in ((1, m), (-1, w - m)):
+            for sy, y in ((1, m), (-1, h - m)):
+                p.drawPolyline(QPolygonF([QPointF(x, y + sy * L), QPointF(x, y + sy * 6), QPointF(x + sx * 6, y), QPointF(x + sx * L, y)]))
+        p.setFont(self._font(self.mono, 8, QFont.Bold, 2.5))
+        fm = QFontMetricsF(self._font(self.mono, 8, QFont.Bold, 2.5))
+        x = 24.0
+        for name, lit, base in (("JARVIS", 1.0 - k, RX.JARVIS), ("FRIDAY", k, RX.FRIDAY)):
+            tw = fm.horizontalAdvance(name)
+            a = 70 + 185 * lit
+            p.setPen(Qt.NoPen); p.setBrush(rgb(base, a))
+            p.drawPolygon(QPolygonF([QPointF(x, 22), QPointF(x + 4, 18), QPointF(x + 8, 22), QPointF(x + 4, 26)]))
+            p.setPen(rgb(base, a)); p.drawText(QRectF(x + 14, 14, tw + 6, 16), Qt.AlignVCenter | Qt.AlignLeft, name)
+            x += tw + 34
+        p.setPen(rgb(acc, 60)); p.drawLine(QPointF(24, 36), QPointF(x - 22, 36))
+
     def _hud(self, p, g):
         p.setCompositionMode(QPainter.CompositionMode_SourceOver)
         w, h = g["w"], g["h"]
@@ -1105,7 +1129,8 @@ class CoreView(QWidget):
             p.drawLine(QPointF(cx + sgn * 128, 20), QPointF(cx + sgn * 136, 14))
         key = MODE_COLOR.get(self.mode, "accent")
         p.setFont(self._font(self.mono, 9, QFont.Bold, 4))
-        self._glow_text(p, QRectF(0, 31, w, 16), self.title, C[key], Qt.AlignCenter, 255)
+        tcol = "#%02x%02x%02x" % tuple(int(v) for v in RX.mix((200, 240, 255), self.reactor.accent(), 0.8)) if key == "accent" else C[key]   # the mind in charge
+        self._glow_text(p, QRectF(0, 31, w, 16), self.title, tcol, Qt.AlignCenter, 255)
         if self.subtitle:
             p.setFont(self._font(self.mono, 8)); p.setPen(qc("muted"))
             p.drawText(QRectF(0, 47, w, 13), Qt.AlignCenter, self.subtitle)
@@ -1128,6 +1153,7 @@ class CoreView(QWidget):
             p.setPen(QColor(col.red(), col.green(), col.blue(), 255 if ckey != "dim" else 130))
             p.drawText(QRectF(x + 14 + fm.horizontalAdvance(name) + 6, 62, 90, 14), Qt.AlignVCenter | Qt.AlignLeft, text)
             x += wd
+        self._minds(p, g)
         vs = self.voice["state"]
         if vs in VOICE_TAG:                                                 # the real voice state, top right
             tag = VOICE_TAG[vs] if not (vs == "listening" and self.voice["attentive"]) else "LISTENING  ·  go ahead"

@@ -79,3 +79,36 @@ class BuildInfo(unittest.TestCase):
         with open(os.path.join(root, ".git", "HEAD"), "w") as f: f.write("0123456789abcdef\n")
         self.assertEqual(build.info(root), ("0123456", "detached"))
         self.assertEqual(build.info(tempfile.mkdtemp()), ("", ""))          # not a checkout: honest, no crash
+
+
+class Launcher(unittest.TestCase):
+    def test_which_command_lines_open_the_window(self):
+        from praxis import launch
+        for argv in ([], ["app"], ["ui"], ["desktop", "C:/proj"]): self.assertTrue(launch.is_launch_request(argv), argv)
+        for argv in (["run", "x"], ["doctor"], ["undo"], ["voice"]): self.assertFalse(launch.is_launch_request(argv), argv)
+
+    def test_it_starts_detached_windowless_and_from_this_checkout(self):
+        from praxis import launch
+        seen = {}
+        def fake(cmd, **kw): seen.update(cmd=cmd, kw=kw); return mock.Mock(pid=42)
+        out = []
+        self.assertEqual(launch.start(["C:/proj"], popen=fake, out=out.append), 42)
+        self.assertEqual(seen["cmd"][1:], ["-m", "praxis.desktop", "C:/proj"])
+        self.assertEqual(seen["kw"]["cwd"], launch.ROOT)
+        self.assertIn(launch.ROOT, seen["kw"]["env"]["PYTHONPATH"])
+        self.assertTrue(seen["kw"].get("start_new_session") or seen["kw"].get("creationflags"))
+        self.assertIn("opening", out[0])
+
+    def test_a_failure_to_start_is_reported_not_raised(self):
+        from praxis import launch
+        out = []
+        def boom(*a, **k): raise OSError("no such file")
+        self.assertIsNone(launch.start(popen=boom, out=out.append))
+        self.assertIn("could not start", out[0])
+
+    def test_pythonw_is_chosen_on_windows_when_it_exists(self):
+        from praxis import launch
+        d = tempfile.mkdtemp(); open(os.path.join(d, "pythonw.exe"), "w").close()
+        with mock.patch.object(launch.sys, "platform", "win32"):
+            self.assertTrue(launch.windowless_python(os.path.join(d, "python.exe")).endswith("pythonw.exe"))
+            self.assertTrue(launch.windowless_python(os.path.join(tempfile.mkdtemp(), "python.exe")).endswith("python.exe"))

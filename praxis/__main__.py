@@ -4,7 +4,7 @@ import os
 import sys
 import time
 
-from . import secrets
+from . import launch, secrets
 from .config import build_stack, load_config
 from .free_tiers import DISCONTINUED, PRESETS, preset
 from .events import EventLog
@@ -195,6 +195,9 @@ def cmd_free(a, ws):
 
 def main(argv=None):
     _safe_streams()
+    raw = list(sys.argv[1:] if argv is None else argv)
+    if launch.is_launch_request(raw):                       # `praxis` / `praxis app [folder]`: open the window and hand the terminal back
+        return 0 if launch.start(raw[1:]) is not None else 1
     ap = argparse.ArgumentParser(prog="praxis")
     sub = ap.add_subparsers(dest="cmd", required=True)
 

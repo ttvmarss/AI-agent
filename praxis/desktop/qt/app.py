@@ -349,6 +349,8 @@ class MainWindow(QMainWindow):
         self.hint = "" if n else (
             "No AI models yet. Sign in to Claude (claude), ChatGPT (codex) or Factory (droid), install Ollama for local models, "
             f"or add a free key:  python -m praxis keys set groq   Not found: {missing}.")
+        self.core.add_log("JARVIS  conversation mind online", "info")
+        self.core.add_log("FRIDAY  execution mind online", "warn")
         fams = list(dict.fromkeys(str(x).split("/")[0] for x in info.get("providers", [])))
         if fams:
             self.core.add_log("BRAINS ONLINE  " + " \u00b7 ".join(fams), "ok")

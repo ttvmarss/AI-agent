@@ -40,18 +40,20 @@ GOLD_BRIGHT = (255, 214, 120)
 STEEL = (120, 135, 152)
 BLUE = (143, 227, 255)
 WHITE = (255, 255, 255)
+JARVIS = (110, 226, 255)           # the conversational mind: cool ice-blue, calm concentric rings
+FRIDAY = (255, 138, 50)            # the executing mind: warm amber, angular and tactical
 
 # what each state looks like. spin: coil ring rad/s. tick: outer scale rad/s. charge: how full the coils are. core: core brightness.
 # hz/amp: pulse. jit: flicker. tint/mix: state colour and how much of it. bright: overall. embers: spark rate multiplier.
 MODE = {
-    "idle":     dict(sweep=0.55, bolts=0.1, flow=10, spin=0.10, tick=0.030, charge=0.50, core=0.85, hz=0.25, amp=0.04, jit=0.00, tint=(143, 227, 255), mix=0.00, bright=1.00, embers=0.35),
-    "starting": dict(sweep=2.6, bolts=0.6, flow=24, spin=1.40, tick=0.200, charge=0.30, core=0.70, hz=0.60, amp=0.06, jit=0.01, tint=(205, 240, 255), mix=0.30, bright=1.00, embers=0.80),
-    "working":  dict(sweep=1.8, bolts=1.3, flow=44, spin=0.95, tick=0.090, charge=0.85, core=1.10, hz=1.00, amp=0.06, jit=0.01, tint=(110, 214, 255), mix=0.45, bright=1.10, embers=1.60),
-    "waiting":  dict(sweep=0.25, bolts=0.08, flow=6, spin=0.04, tick=0.010, charge=0.60, core=0.90, hz=0.50, amp=0.10, jit=0.00, tint=(255, 159, 67), mix=0.70, bright=1.00, embers=0.30),
-    "ok":       dict(sweep=1.2, bolts=0.8, flow=30, spin=0.45, tick=0.060, charge=1.00, core=1.30, hz=0.35, amp=0.05, jit=0.00, tint=(255, 214, 120), mix=0.65, bright=1.15, embers=1.20),
-    "bad":      dict(sweep=0.15, bolts=0.55, flow=4, spin=0.05, tick=0.005, charge=0.25, core=0.60, hz=0.30, amp=0.05, jit=0.06, tint=(255, 74, 61), mix=0.80, bright=0.95, embers=0.20),
-    "stopping": dict(sweep=0.0, bolts=0.3, flow=0, spin=0.00, tick=0.000, charge=0.10, core=0.50, hz=0.80, amp=0.08, jit=0.04, tint=(255, 120, 60), mix=0.70, bright=1.00, embers=0.10),
-    "stopped":  dict(sweep=0.2, bolts=0.05, flow=4, spin=0.06, tick=0.010, charge=0.35, core=0.65, hz=0.25, amp=0.03, jit=0.00, tint=(255, 159, 67), mix=0.45, bright=0.90, embers=0.15),
+    "idle":     dict(persona=0.0, sweep=0.55, bolts=0.1, flow=10, spin=0.10, tick=0.030, charge=0.50, core=0.85, hz=0.25, amp=0.04, jit=0.00, tint=(110, 226, 255), mix=0.45, bright=1.00, embers=0.35),
+    "starting": dict(persona=0.1, sweep=2.6, bolts=0.6, flow=24, spin=1.40, tick=0.200, charge=0.30, core=0.70, hz=0.60, amp=0.06, jit=0.01, tint=(205, 240, 255), mix=0.30, bright=1.00, embers=0.80),
+    "working":  dict(persona=1.0, sweep=1.8, bolts=1.3, flow=44, spin=0.95, tick=0.090, charge=0.85, core=1.10, hz=1.00, amp=0.06, jit=0.01, tint=(255, 128, 48), mix=0.80, bright=1.10, embers=1.60),
+    "waiting":  dict(persona=0.85, sweep=0.25, bolts=0.08, flow=6, spin=0.04, tick=0.010, charge=0.60, core=0.90, hz=0.50, amp=0.10, jit=0.00, tint=(255, 159, 67), mix=0.70, bright=1.00, embers=0.30),
+    "ok":       dict(persona=0.25, sweep=1.2, bolts=0.8, flow=30, spin=0.45, tick=0.060, charge=1.00, core=1.30, hz=0.35, amp=0.05, jit=0.00, tint=(255, 214, 120), mix=0.65, bright=1.15, embers=1.20),
+    "bad":      dict(persona=1.0, sweep=0.15, bolts=0.55, flow=4, spin=0.05, tick=0.005, charge=0.25, core=0.60, hz=0.30, amp=0.05, jit=0.06, tint=(255, 74, 61), mix=0.80, bright=0.95, embers=0.20),
+    "stopping": dict(persona=1.0, sweep=0.0, bolts=0.3, flow=0, spin=0.00, tick=0.000, charge=0.10, core=0.50, hz=0.80, amp=0.08, jit=0.04, tint=(255, 120, 60), mix=0.70, bright=1.00, embers=0.10),
+    "stopped":  dict(persona=0.35, sweep=0.2, bolts=0.05, flow=4, spin=0.06, tick=0.010, charge=0.35, core=0.65, hz=0.25, amp=0.03, jit=0.00, tint=(255, 159, 67), mix=0.45, bright=0.90, embers=0.15),
 }
 FAST_MODES = ("stopping",)       # these snap quickly: a kill switch must look like one
 
@@ -72,7 +74,7 @@ def ease_out(x):
 class Dynamics:
     """Eased parameters. Switching state never snaps (except STOP): values glide toward the new mode's targets."""
 
-    KEYS = ("spin", "tick", "charge", "core", "hz", "amp", "jit", "mix", "bright", "embers", "sweep", "bolts", "flow")
+    KEYS = ("persona", "spin", "tick", "charge", "core", "hz", "amp", "jit", "mix", "bright", "embers", "sweep", "bolts", "flow")
 
     def __init__(self, mode="idle"):
         self.mode = mode
@@ -229,6 +231,10 @@ class Reactor:
         if mode == "stopping":
             return lit * clamp(base * (1.0 - (i / COILS)) * 0.6)
         return lit * clamp(base * (0.85 + 0.15 * math.sin(self.t * 1.1 + i * 0.7)))
+
+    def accent(self):
+        """The colour of the mind in charge right now: JARVIS ice-blue while it listens and talks, FRIDAY amber while it works."""
+        return mix(JARVIS, FRIDAY, clamp(self.dyn.v["persona"]))
 
     def tint_colour(self):
         return self.dyn.tint, self.dyn.v["mix"]

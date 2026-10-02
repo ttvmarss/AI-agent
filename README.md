@@ -66,7 +66,8 @@ voice and the reply speed. The voice is `jarvis-high` by default (change `voice 
 ## Run
 
 ```
-python -m praxis.desktop            # the desktop app   (Windows: windows\PRAXIS.bat or the Desktop shortcut)
+praxis                              # opens the window and gives the terminal back (Windows: run windows\Install-Command.ps1 once; `praxis update` pulls first)
+python -m praxis.desktop            # the desktop app in the foreground   (also: windows\PRAXIS.bat or the Desktop shortcut)
 python -m praxis doctor --ping      # what is installed / logged in / sandboxed; one tiny real prompt per provider
 python -m praxis free               # the free cloud tiers: limits, data terms, sources;  `praxis keys set groq` adds a key
 python -m praxis hardware           # your machine + recommended local models + Ollama tuning

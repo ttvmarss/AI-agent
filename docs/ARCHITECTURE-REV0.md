@@ -1730,4 +1730,20 @@ undo restored the broken file, a second undo said "nothing to undo", `verify-log
 
 **Still unverified here:** the microphone, speakers, Windows window and a real GPU. Everything above was verified in this container only.
 
-*End of Revision Zero (with addenda 38 to 48). Failures get logged, not hidden.*
+## 49. Status addendum — two minds, and a command to open it (2026-10-02)
+
+**Two minds in one core.** The screen now has the MCU's two assistants as two *states of the same system*: **JARVIS** (conversation: cool ice-blue,
+calm) is in charge while it is idle, listening, talking or verified; **FRIDAY** (execution: deep amber-orange) takes over while a goal runs, waits
+for your approval or is being stopped; red still means failure. This is `persona` in the reactor's mode table, eased like every other value (it
+glides over about a second, it never snaps), and it recolours the aura, sweep, coils, streaks, hexagon waves and the mode title. The two names sit
+top-left as chips (the one in charge is lit) and the screen corners are bracketed in the active colour. Nothing is invented: it follows the real
+state (`tests/test_reactor.Persona`, pixel tests for the chips and for working-versus-idle colour). Boot lines in the event feed now read
+`JARVIS conversation mind online` and `FRIDAY execution mind online`. Also fixed: a brain's name was clipped by a 130 px box ("DROID · FACTORY" lost its last letter).
+
+**Launch from a terminal.** `praxis` (or `praxis app [folder]`) starts the window **detached** (pythonw on Windows, a new session elsewhere) from
+this checkout and returns the prompt at once, so the terminal is free and closing it does not close PRAXIS. `windows\Install-Command.ps1` writes
+`praxis.cmd` into `%LOCALAPPDATA%\PRAXIS\bin` and adds that to your user PATH; `praxis update` pulls the latest code and opens the window; any other
+word (`praxis run ...`, `praxis doctor`, `praxis undo`) is the normal command line. **Not verified here:** the Windows PATH step and the
+detached start on a real Windows desktop (only the argument handling and the detached-start call are tested, with a fake process).
+
+*End of Revision Zero (with addenda 38 to 49). Failures get logged, not hidden.*
