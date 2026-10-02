@@ -3,6 +3,7 @@ import hashlib
 import os
 import shutil
 import subprocess
+import sys
 import uuid
 
 # Never copied by checkpoints, never deleted by rollback, never listed: tool-managed or regenerable trees.
@@ -102,6 +103,8 @@ class Workspace:
         argv = shlex.split(cmd)
         if self.sandbox is not None and self.sandbox.strong:
             argv = self.sandbox.wrap(argv, self.root)
+        elif argv and argv[0] in ("python", "python3"):
+            argv[0] = sys.executable  # `python3` does not exist on most Windows machines
         proc = subprocess.run(argv, cwd=self.root, capture_output=True, text=True,
                               timeout=timeout, shell=False)
         out = (proc.stdout + proc.stderr)[-MAX_OUT:]

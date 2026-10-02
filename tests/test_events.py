@@ -38,3 +38,30 @@ class EventLogTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ConcurrentOpen(unittest.TestCase):
+    """Regression: two connections opening a NEW database at once used to raise 'database is locked'
+    (journal_mode=WAL needs an exclusive lock and ignores the busy timeout)."""
+
+    def test_many_threads_opening_a_fresh_db_and_writing(self):
+        import threading
+        for round_ in range(12):
+            path = os.path.join(tempfile.mkdtemp(), "l.db")
+            errors, barrier = [], threading.Barrier(8)
+
+            def work(i):
+                try:
+                    barrier.wait()
+                    log = EventLog(path)
+                    for j in range(5):
+                        log.append(f"g{i}", "a", "t", {"j": j})
+                        log.since(0); log.last_goal_id()
+                except Exception as e:
+                    errors.append(repr(e))
+            ts = [threading.Thread(target=work, args=(i,)) for i in range(8)]
+            [t.start() for t in ts]; [t.join() for t in ts]
+            self.assertEqual(errors, [], f"round {round_}")
+            ok, bad = EventLog(path).verify_chain()
+            self.assertTrue(ok, f"chain broken at {bad} in round {round_}")   # concurrent writers must not fork the chain
+            self.assertEqual(len(EventLog(path).all()), 40)

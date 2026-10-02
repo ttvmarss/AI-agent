@@ -5,17 +5,23 @@ no goal is VERIFIED without passing, non-trivial success verifiers.
 """
 import json
 import os
+import threading
 import uuid
 from dataclasses import dataclass, field
 
+from . import proc
 from .events import EventLog
 from .memory import Memory
 from .guard import ALLOW, DENY, ESCALATE, Decision, Guard
-from .router import ProviderError, Router
+from .router import ProviderError, Router, family
 from .tools import ToolError, ToolRuntime, Workspace
 from .verifiers import verify
 
-VERIFIED, UNVERIFIED, FAILED = "VERIFIED", "UNVERIFIED", "FAILED"
+VERIFIED, UNVERIFIED, FAILED, CANCELLED = "VERIFIED", "UNVERIFIED", "FAILED", "CANCELLED"
+
+
+class Cancelled(Exception):
+    """The human pressed Stop. Unwinds to the top of run()/resume(), which rolls back and reports CANCELLED."""
 
 SYSTEM = """You are the planner inside PRAXIS. Output ONLY a JSON object:
 {"steps":[{"id":str,"tool":str,"args":object,"verify":{"type":...},"deps":[ids]}],
@@ -113,8 +119,32 @@ class Executive:
         self.max_steps, self.max_model_calls, self.max_replans = max_steps, max_model_calls, max_replans
         self.critic, self.max_cost_usd, self.data_class = critic, max_cost_usd, data_class
         self.cost = 0.0
+        self._cancel = threading.Event()
+        self._ctx = {}
         self.keep_checkpoints = keep_checkpoints
         self.memory = Memory(log) if memory else None
+
+    # -- kill switch -----------------------------------------------------------
+    def cancel(self):
+        """Stop at the next safe point and kill any in-flight CLI call. Thread-safe; callable from the UI."""
+        self._cancel.set()
+
+    def reset_cancel(self):
+        self._cancel.clear()
+
+    def _check_cancel(self):
+        if self._cancel.is_set():
+            raise Cancelled()
+
+    def _on_cancel(self):
+        goal, cid, parent = self._ctx.get("goal"), self._ctx.get("cid"), self._ctx.get("ck")
+        rolled = False
+        if cid:
+            self.ws.rollback(cid)  # restore the pre-goal state: Stop never leaves half-applied work behind
+            rolled = True
+        i = self._ev(goal, "human", "goal.cancelled", {"rolled_back": rolled}, [parent] if parent else [])
+        return self._finish(goal, i, Report(CANCELLED, goal, "stopped by user", rolled_back=rolled,
+                                            checkpoint=cid or ""))
 
     def _gate(self, cmd, tainted=False):
         """Verifier commands are actions: same Guard, no exceptions, no approver (a plan cannot self-approve)."""
@@ -136,12 +166,17 @@ class Executive:
             raise ProviderError("model-call budget exhausted")
         if self.max_cost_usd is not None and self.cost >= self.max_cost_usd:
             raise ProviderError(f"cost budget exhausted (${self.cost:.2f} >= ${self.max_cost_usd:.2f})")
+        self._check_cancel()
         calls[0] += 1
 
         def on_event(t, p):
             self.cost += float(p.get("cost_usd") or 0)
             self._ev(goal, "router", t, p)
-        return self.router.call(role, messages, data_class=self.data_class, on_event=on_event, **kw)
+        try:
+            return self.router.call(role, messages, data_class=self.data_class, on_event=on_event, **kw)
+        except ProviderError:
+            self._check_cancel()  # a killed subprocess surfaces as ProviderError; report it as a cancel instead
+            raise
 
     def _observe(self, goal, paths, parent):
         """Class-0 reads on the planner's behalf. Content is returned as UNTRUSTED data."""
@@ -197,8 +232,19 @@ class Executive:
 
     # -- main loop ------------------------------------------------------------
     def run(self, goal_text):
+        self._ctx = {}
+        proc.set_cancel(self._cancel)
+        try:
+            return self._run(goal_text)
+        except Cancelled:
+            return self._on_cancel()
+        finally:
+            proc.set_cancel(None)
+
+    def _run(self, goal_text):
         goal = uuid.uuid4().hex[:10]
         intent = self._ev(goal, "user", "goal.intent", {"text": goal_text})
+        self._ctx["goal"] = goal
         calls = [0]
         try:
             listing = self.ws.fs_list(".")
@@ -215,8 +261,10 @@ class Executive:
             plan, plan_id, tainted = self._critique(goal, goal_text, messages, plan, plan_id, calls, tainted)
         except (ProviderError, PlanError) as e:
             return self._finish(goal, intent, Report(FAILED, goal, f"planning failed: {e}"))
+        self._check_cancel()
         cid = self.ws.checkpoint()
         ck = self._ev(goal, "executive", "checkpoint", {"id": cid}, [plan_id])
+        self._ctx.update(cid=cid, ck=ck)
         return self._drive(goal, goal_text, plan, plan_id, cid, ck, calls, 0, tainted)
 
     def _critique(self, goal, goal_text, messages, plan, plan_id, calls, tainted=False):
@@ -224,14 +272,14 @@ class Executive:
         if not self.critic:
             return plan, plan_id, tainted
         planner = self.router.last_provider
-        if not planner or not self.router.eligible("critic", self.data_class, exclude=(planner,)):
+        if not planner or not self.router.eligible("critic", self.data_class, exclude=(family(planner),)):
             self._ev(goal, "executive", "critic.skipped",
                      {"reason": "no second eligible provider; single-model plan"}, [plan_id])
             return plan, plan_id, tainted
         msgs = [{"role": "system", "content": CRITIC_SYSTEM},
                 {"role": "user", "content": f"GOAL: {goal_text}\nPLAN: {json.dumps(plan)}"}]
         try:
-            raw = self._model(goal, "critic", msgs, calls, exclude=(planner,))
+            raw = self._model(goal, "critic", msgs, calls, exclude=(family(planner),))
             v = json.loads(raw[raw.index("{"):raw.rindex("}") + 1])
             objections = [o for o in v.get("objections", []) if isinstance(o, dict) and o.get("issue")]
             approve = bool(v.get("approve", not objections))
@@ -286,16 +334,19 @@ class Executive:
 
     # -- crash recovery ---------------------------------------------------------
     def unfinished_goals(self):
-        """Goals with an intent but no report: the process died (or was killed) mid-flight."""
-        started, finished = [], set()
-        for e in self.log.all():
-            if e.type == "goal.intent":
-                started.append(e.goal_id)
-            elif e.type == "goal.report":
-                finished.add(e.goal_id)
-        return [g for g in started if g not in finished]
+        return self.log.unfinished_goals()
 
     def resume(self, goal_id=None):
+        self._ctx = {}
+        proc.set_cancel(self._cancel)
+        try:
+            return self._resume(goal_id)
+        except Cancelled:
+            return self._on_cancel()
+        finally:
+            proc.set_cancel(None)
+
+    def _resume(self, goal_id=None):
         """Restore the pre-goal checkpoint and re-execute the last *approved* recorded plan.
 
         No model is called: the plan is read back from the log (model output is an event).
@@ -305,6 +356,7 @@ class Executive:
         if not todo:
             return None
         goal = todo[0]
+        self._ctx["goal"] = goal
         evs = self.log.all(goal_id=goal)
         if any(e.type == "goal.report" for e in evs):
             return None
@@ -316,6 +368,7 @@ class Executive:
                 FAILED, goal, "interrupted before execution began; nothing was changed. Re-run the goal."))
         ck = ckpts[-1]
         cid = ck.payload["id"]
+        self._ctx.update(cid=cid, ck=resumed)
         runnable = None
         accepted = [(i, e) for i, e in enumerate(evs) if e.type == "plan.accepted"]
         if accepted:  # only the LAST plan counts: an earlier one already failed if a later one exists
@@ -339,6 +392,7 @@ class Executive:
             return False, Report(FAILED, goal, f"plan has {len(plan['steps'])} steps > budget {self.max_steps}"), observations
         done = 0
         for step in plan["steps"]:
+            self._check_cancel()
             si = self._ev(goal, "executive", "step.intent",  # write-ahead: logged before acting
                           {"step": step["id"], "tool": step["tool"], "args": step["args"]}, [plan_id])
             d = self.guard.decide(step["tool"], step["args"], tainted=tainted)
@@ -355,8 +409,9 @@ class Executive:
                 out, ok = self.tools.run(step["tool"], step["args"]), True
             except ToolError as e:
                 out, ok = str(e), False
-            ri = self._ev(goal, "tool", "tool.result",
+            ri = self._ev(goal, "tool", "tool.result",   # always record what actually ran, even if Stop follows
                           {"step": step["id"], "tool": step["tool"], "ok": ok, "output": str(out)[:2000]}, [di])
+            self._check_cancel()
             observations.append({"step": step["id"], "tool": step["tool"], "ok": ok, "output": str(out)[:500]})
             if not ok:
                 return False, Report(FAILED, goal, f"step {step['id']} failed: {out}", evidence, steps_done=done), observations

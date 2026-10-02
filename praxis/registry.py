@@ -21,6 +21,10 @@ class Registry:
         e = self.data.get(name, {}).get(kind)
         return e["score"] if e else None
 
+    def cost(self, name, kind="planning"):
+        e = self.data.get(name, {}).get(kind) or {}
+        return float(e.get("cost_per_task", 0.0))
+
     def record(self, name, kind, score, n, latency_s, **extra):
         self.data.setdefault(name, {})[kind] = {"score": round(score, 4), "n": n,
                                                 "latency_s": round(latency_s, 2),
@@ -89,3 +93,41 @@ def pick_ollama_model(models, memory_bytes, registry=None, prefer=()):
         if scored:
             return max(scored)[1]
     return max(cands, key=lambda c: (c[2], c[1]))[0]
+
+
+def pick_for_hardware(models, profile, registry=None, prefer=(), min_tps=6.0):
+    """Choose the best INSTALLED Ollama model for this machine.
+
+    Fit = weights fit in VRAM + usable RAM. Speed = measured tokens/s if `praxis bench` recorded it, else the
+    bandwidth physics estimate (MoE reads only active experts). Among models that are fast enough, a measured
+    quality score wins; with no measurements, the catalog's dense-equivalent size is the prior.
+    """
+    import math
+    from .catalog import CATALOG
+    from .hardware import GB, estimate_tokens_per_s, fits
+    by_tag = {m.tag: m for m in CATALOG}
+    cands = []
+    for m in models:
+        name = m.get("name") or m.get("model")
+        if not name or "embed" in name.lower():
+            continue
+        size = int(m.get("size", 0))
+        if size <= 0 or not fits(size, profile):
+            continue
+        cat = by_tag.get(name) or next((c for t, c in by_tag.items() if name.startswith(t + "-") or t.startswith(name + "-")), None)
+        total = cat.total_b if cat else (parse_params(m.get("details"), name) / 1e9 or size / GB * 2)
+        active = cat.active_b if cat else total
+        entry = (registry.data.get(f"ollama/{name}", {}).get("planning", {}) if registry is not None else {})
+        tps = entry.get("tokens_per_s") or estimate_tokens_per_s(size, total, active, profile)
+        cands.append({"name": name, "tps": tps, "score": entry.get("score"), "equiv": math.sqrt(total * active)})
+    if not cands:
+        return None
+    names = {c["name"] for c in cands}
+    for want in prefer:
+        if want in names:
+            return want
+    usable = [c for c in cands if c["tps"] >= min_tps] or [max(cands, key=lambda c: c["tps"])]
+    measured = [c for c in usable if c["score"] is not None]
+    if measured:
+        return max(measured, key=lambda c: (c["score"], c["tps"]))["name"]
+    return max(usable, key=lambda c: (c["equiv"], c["tps"]))["name"]

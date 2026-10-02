@@ -7,7 +7,9 @@ import time
 from .config import build_stack
 from .events import EventLog
 from .executive import Executive
+from .hardware import detect_hardware, profile_from_config
 from .registry import detect_memory_bytes
+from .report import hardware_report, model_table, ollama_tips, recommendation_report
 
 
 def _paths(ws):
@@ -44,38 +46,55 @@ def _print_report(rep):
         print(f"  [{'PASS' if e['passed'] else 'FAIL'}] {e['claim']}")
 
 
-def cmd_doctor(stack, ws, ping):
-    mem = detect_memory_bytes()
-    print(f"memory budget for local models: {mem / 2**30:.1f} GiB")
+def cmd_doctor(stack, ws, ping, ping_all=False):
+    print(f"machine : {stack.profile.describe()}")
     sb = stack.sandbox
-    print(f"code-execution sandbox: {sb.kind.upper()} " + ("(self-attack passed: no outside writes, no network)" if sb.strong else
+    print(f"sandbox : {sb.kind.upper()} " + ("(self-attack passed: no outside writes, no network, state hidden)" if sb.strong else
           "- NONE: running code (tests, scripts) will need your approval every time.\n"
-          "   Fix: install bubblewrap (apt/dnf install bwrap), or enable rootless user namespaces, or start Docker.") + "\n")
+          "          Linux: install bubblewrap. Windows/macOS: install Docker Desktop (or use WSL2).") + "\n")
+    tips = ollama_tips(stack.profile)
     ok = 0
+    fams = {}
+    for p in stack.providers:
+        fams.setdefault(p.card.name.split("/")[0], []).append(p)
     for name in ("claude", "codex", "droid", "ollama", "devin"):
-        p = next((x for x in stack.providers if x.card.name.split("/")[0] == name), None)
-        if p is None:
+        inst = fams.get(name)
+        if not inst:
             print(f"  {name:<8} SKIPPED  {stack.skipped.get(name, '')}")
             continue
+        first = inst[0]
         try:
-            ver = p.version()
-            line = f"  {name:<8} READY    {ver}"
+            line = f"  {name:<8} READY    {first.version()}"
             if name == "ollama":
-                line += f"  model={p.resolve_model()}"
-            if ping and getattr(p, "can_complete", True):
-                t0 = time.time()
-                out = p.complete("planner", [{"role": "user", "content": "Reply with exactly: PONG"}])
-                line += f"  ping={'ok' if 'PONG' in out.upper() else 'UNEXPECTED:' + out[:30]!r} {time.time() - t0:.1f}s"
-            if hasattr(p, "can_complete") and p.can_complete:
-                ok += 1
+                line += f"  selected={first.resolve_model()}"
             print(line)
+            if name == "devin":
+                print("           delegate-only (Class 4, spends ACUs); not pinged so no session is started")
+                continue
+            sample = next((x for x in inst if getattr(x, "tier", None) == "balanced"), inst[0])
+            fam_ok = not (ping or ping_all)  # without --ping, "READY" means installed and answering --version
+            for p in inst:
+                label = p.card.name if "/" in p.card.name else f"{name}/(default model)"
+                tier = f"[{p.tier}]" if getattr(p, "tier", None) else ""
+                if ping_all or (ping and p is sample):
+                    t0 = time.time()
+                    try:
+                        out = p.complete("planner", [{"role": "user", "content": "Reply with exactly: PONG"}])
+                        res = f"ping {'ok' if 'PONG' in out.upper() else 'UNEXPECTED ' + repr(out[:30])} {time.time() - t0:.1f}s"
+                        c = (getattr(p, "last_meta", None) or {}).get("cost_usd")
+                        res += f"  ${c:.4f}" if c else ""
+                        fam_ok = fam_ok or 'PONG' in out.upper()
+                    except Exception as e:
+                        res = f"UNAVAILABLE: {str(e)[:90]}"
+                else:
+                    res = "not pinged"
+                print(f"           - {label:<34}{tier:<12}{res}")
+            ok += 1 if fam_ok else 0
         except Exception as e:
             print(f"  {name:<8} BROKEN   {e}")
-        # delegation-only providers are listed but cannot plan
-    for name in ("devin",):
-        if name in [x.card.name for x in stack.providers]:
-            print(f"  devin    READY    delegate-only (Class 4, spends ACUs); not pinged to avoid starting a session")
-    print(f"\n{ok} provider(s) can plan." + ("" if ok else "  Install/login at least one of: claude, codex, droid, ollama."))
+    print(f"\n{ok} usable provider group(s)." + ("" if ok else "  Install/login at least one of: claude, codex, droid, ollama."))
+    if tips:
+        print("\n" + tips)
     return 0 if ok else 1
 
 
@@ -96,11 +115,15 @@ def main(argv=None):
     add("why", (["event_id"], {"type": int}))
     add("verify-log")
     add("rollback", (["checkpoint"], {}))
-    add("doctor", (["--ping"], {"action": "store_true", "help": "send a tiny real prompt to each provider"}))
-    add("models")
+    add("doctor", (["--ping"], {"action": "store_true", "help": "send a tiny real prompt to one model per provider"}),
+        (["--ping-all"], {"action": "store_true", "help": "ping every configured model (costs a little usage)"}))
+    add("models", (["--recommend"], {"action": "store_true", "help": "what to install for this hardware"}))
+    add("hardware")
+    add("pull", (["tag"], {}), (["--yes"], {"action": "store_true", "help": "do not ask for confirmation"}))
     add("bench", (["--trials"], {"type": int, "default": 1}), (["--providers"], {"default": ""}),
         (["--all-ollama"], {"action": "store_true", "help": "benchmark every installed Ollama model that fits"}),
         (["--no-critique"], {"action": "store_true"}),
+        (["--max-cost"], {"type": float, "default": 3.0, "help": "stop starting new providers once this many USD were spent"}),
         (["--holdout"], {"action": "store_true", "help": "run the held-out task set (never used for tuning)"}))
     a = ap.parse_args(argv)
     ws, db = _paths(a.workspace)
@@ -112,7 +135,40 @@ def main(argv=None):
         return 0 if ok else 2
     stack = build_stack(ws)
     if a.cmd == "doctor":
-        return cmd_doctor(stack, ws, a.ping)
+        return cmd_doctor(stack, ws, a.ping, a.ping_all)
+    if a.cmd == "hardware":
+        prof = profile_from_config(stack.cfg["hardware"], detect_hardware())
+        print(hardware_report(prof)); print()
+        tips = ollama_tips(prof)
+        if tips:
+            print(tips); print()
+        print(recommendation_report(prof))
+        return 0
+    if a.cmd == "pull":
+        from .providers import OllamaProvider
+        o = OllamaProvider(stack.cfg["providers"]["ollama"].get("host"), timeout=7200)
+        try:
+            o.version()
+        except Exception as e:
+            print(f"Ollama is not running: {e}"); return 1
+        if not a.yes:
+            if not sys.stdin.isatty():
+                print(f"refusing to download {a.tag} without --yes (models are multiple GB)"); return 2
+            if input(f"Download {a.tag} with Ollama? [y/N] ").strip().lower() != "y":
+                return 2
+        last = [""]
+        def show(ev):
+            if ev.get("total") and ev.get("completed") is not None:
+                pct = f"{ev['status']}: {100 * ev['completed'] // ev['total']}%"
+            else:
+                pct = ev.get("status", "")
+            if pct != last[0]:
+                print(pct); last[0] = pct
+        ok = o.pull(a.tag, show)
+        print("success" if ok else "pull did not report success")
+        return 0 if ok else 1
+    if a.cmd == "models" and a.recommend:
+        print(recommendation_report(profile_from_config(stack.cfg["hardware"], detect_hardware()))); return 0
     if a.cmd == "models":
         o = next((p for p in stack.providers if p.card.name.startswith("ollama")), None)
         if not o:
@@ -129,8 +185,8 @@ def main(argv=None):
         from .bench import bench_all
         provs = [p for p in stack.providers if getattr(p, "can_complete", True)]
         if a.providers:
-            want = set(a.providers.split(","))
-            provs = [p for p in provs if p.card.name.split("/")[0] in want]
+            want = set(a.providers.split(","))  # a family ("claude") or an exact instance ("claude/claude-opus-5-5")
+            provs = [p for p in provs if p.card.name.split("/")[0] in want or p.card.name in want]
         if a.all_ollama:
             from .providers import OllamaProvider
             from .registry import parse_params
@@ -145,7 +201,7 @@ def main(argv=None):
         if not provs:
             print("no providers to benchmark (run `praxis doctor`)"); return 1
         print(f"benchmarking {[p.card.name for p in provs]}  trials={a.trials}\n")
-        s = bench_all(provs, stack.registry, a.trials, not a.no_critique, sandbox=stack.sandbox, holdout=a.holdout)
+        s = bench_all(provs, stack.registry, a.trials, not a.no_critique, sandbox=stack.sandbox, holdout=a.holdout, max_cost=a.max_cost)
         print(f"\n{'provider':<30}{'pass':>6}{'false-done':>12}{'attacks':>9}{'critique':>10}{'latency':>9}{'cost$':>8}")
         for n, v in s.items():
             print(f"{n:<30}{v['pass_rate']:>6.2f}{v['false_done']:>12}{v['attacks']:>9}"

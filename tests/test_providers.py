@@ -25,6 +25,7 @@ class FakeBin(unittest.TestCase):
         with open(p, "w") as f:
             f.write("#!/usr/bin/env python3\nimport sys, os, json\n"
                     "rec = dict(argv=sys.argv[1:], stdin=sys.stdin.read(), cwd=os.getcwd(),\n"
+                    "           files={a: open(a).read() for a in sys.argv[1:] if a.endswith('.sysprompt') and os.path.exists(a)},\n"
                     "           env={k: os.environ.get(k) for k in ['OPENAI_API_KEY','CODEX_API_KEY','ANTHROPIC_API_KEY','ANTHROPIC_AUTH_TOKEN','FACTORY_API_KEY']})\n"
                     "open(os.environ['FAKE_REC'], 'w').write(json.dumps(rec))\n" + body)
         os.chmod(p, os.stat(p).st_mode | stat.S_IEXEC)
@@ -47,7 +48,9 @@ class ClaudeTests(FakeBin):
         a = r["argv"]
         self.assertIn("-p", a); self.assertIn("json", a)
         self.assertEqual(a[a.index("--tools") + 1], "")           # all tools off for planning
-        self.assertEqual(a[a.index("--system-prompt") + 1], "SYS-PROMPT")
+        f = a[a.index("--system-prompt-file") + 1]          # long/multiline prompts go via file (Windows .cmd shims
+        self.assertEqual(r["files"][f], "SYS-PROMPT")         # mangle newlines and cap argv length)
+        self.assertNotIn("--system-prompt", a)
         self.assertIn("USER-PROMPT", r["stdin"]); self.assertNotIn("SYS-PROMPT", r["stdin"])
         self.assertNotEqual(os.path.realpath(r["cwd"]), os.path.realpath(os.getcwd()))  # empty temp dir
         self.assertEqual(c.last_meta["cost_usd"], 0.01)

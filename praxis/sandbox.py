@@ -113,7 +113,8 @@ def detect(prefer=("bwrap", "unshare", "docker"), log=None):
     cands = {"bwrap": (BwrapSandbox, "bwrap"), "unshare": (UnshareSandbox, "unshare"), "docker": (DockerSandbox, "docker")}
     for name in prefer:
         cls, binary = cands[name]
-        if not shutil.which(binary) or sys.platform.startswith("win"):
+        linux_only = name in ("bwrap", "unshare")
+        if not shutil.which(binary) or (linux_only and not sys.platform.startswith("linux")):
             continue
         sb = cls()
         try:

@@ -14,6 +14,15 @@ class RateLimited(ProviderError):
     """Subscription/usage limit hit: router puts the provider on cooldown and falls back."""
 
 
+class ModelUnavailable(ProviderError):
+    """This account/plan/CLI does not offer that model (yet). Long cooldown; the next model in the family serves."""
+
+
+def family(name):
+    """'claude/opus' -> 'claude'. A critic must come from a different FAMILY, not merely a different model id."""
+    return name.split("/")[0]
+
+
 @dataclass
 class CapabilityCard:
     name: str
@@ -76,44 +85,62 @@ class AnthropicProvider(Provider):
         return "".join(b.get("text", "") for b in data.get("content", []))
 
 
-class Router:
-    """Hard filters first (privacy, cooldown, exclusions), then preference order.
+EPSILON = 0.05            # scores closer than this are "equally good": then the cheaper model wins
+UNAVAILABLE_COOLDOWN_S = 6 * 3600
+STRIKE_COOLDOWN_S = 600
 
-    Order = config order for the role, or measured benchmark score when `strategy` is "measured"
-    (or "auto" and every candidate has a score). Every call is reported through `on_event`.
+
+class Router:
+    """Hard filters first (privacy, cooldown, exclusions), then ranking.
+
+    Ranking: if EVERY candidate has a measured score (praxis bench), pick the cheapest model within EPSILON of the
+    best score, then the rest by score. Otherwise: family preference order for the role, and within a family the
+    role's preferred tier (planner -> balanced, critic -> best by default). Every call is reported via `on_event`.
     """
 
-    def __init__(self, providers, roles=None, registry=None, strategy="auto", cooldown_s=900, clock=time.time):
+    def __init__(self, providers, roles=None, registry=None, strategy="auto", cooldown_s=900, clock=time.time,
+                 role_tiers=None):
         self.providers = providers
         self.roles = roles or {}
+        self.role_tiers = role_tiers or {}
         self.registry = registry
         self.strategy = strategy
         self.cooldown_s = cooldown_s
         self.clock = clock
         self.cooling = {}          # provider name -> resume timestamp
         self.last_provider = None  # name of the provider that served the latest successful call
+        self.fails = {}            # consecutive unexplained failures per provider
+
+    def _measured_order(self, cands, kind):
+        sc = {p.card.name: self.registry.score(p.card.name, kind) or 0.0 for p in cands}
+        top = max(sc.values())
+        pool = [p for p in cands if sc[p.card.name] >= top - EPSILON]
+        first = min(pool, key=lambda p: (self.registry.cost(p.card.name, kind), -sc[p.card.name]))
+        rest = sorted((p for p in cands if p is not first), key=lambda p: -sc[p.card.name])
+        return [first] + rest
 
     def _rank(self, role, cands):
-        pref = self.roles.get(role) or []
-        def pidx(p):
-            n = p.card.name
-            for i, want in enumerate(pref):
-                if n == want or n.startswith(want + "/"):
-                    return i
-            return len(pref)
-        order = sorted(cands, key=pidx)
+        if not cands:
+            return cands
+        kind = "critique" if role == "critic" else "planning"
         if self.registry is not None and self.strategy in ("auto", "measured"):
-            kind = "critique" if role == "critic" else "planning"
-            scores = [self.registry.score(p.card.name, kind) for p in order]
-            if all(x is not None for x in scores) or self.strategy == "measured":
-                order = sorted(order, key=lambda p: -(self.registry.score(p.card.name, kind) or 0.0))
-        return order
+            have = [self.registry.score(p.card.name, kind) is not None for p in cands]
+            if all(have) or (self.strategy == "measured" and any(have)):
+                return self._measured_order(cands, kind)
+        pref, tiers = self.roles.get(role) or [], self.role_tiers.get(role) or []
+
+        def key(p):
+            fam = family(p.card.name)
+            fi = pref.index(fam) if fam in pref else len(pref)
+            tier = getattr(p, "tier", None)
+            return (fi, tiers.index(tier) if tier in tiers else len(tiers))
+        return sorted(cands, key=key)
 
     def eligible(self, role, data_class="project", exclude=()):
         now = self.clock()
         out = []
         for p in self.providers:
-            if not getattr(p, "can_complete", True) or p.card.name in exclude:
+            if not getattr(p, "can_complete", True) or p.card.name in exclude or family(p.card.name) in exclude:
                 continue
             if data_class == "private" and p.card.privacy != "local":
                 continue  # data-class gating: private data never leaves the machine
@@ -127,18 +154,23 @@ class Router:
         for p in self.eligible(role, data_class, exclude):
             try:
                 out = p.complete(role, messages)
-            except RateLimited as e:
-                self.cooling[p.card.name] = self.clock() + self.cooldown_s
+            except (RateLimited, ModelUnavailable) as e:
+                wait = UNAVAILABLE_COOLDOWN_S if isinstance(e, ModelUnavailable) else self.cooldown_s
+                self.cooling[p.card.name] = self.clock() + wait
                 errors.append(f"{p.card.name}: {e}")
                 if on_event:
                     on_event("model.call", {"provider": p.card.name, "role": role, "ok": False,
-                                            "error": str(e)[:300], "cooldown_s": self.cooldown_s})
+                                            "error": str(e)[:300], "cooldown_s": wait})
                 continue
             except ProviderError as e:
+                n = self.fails[p.card.name] = self.fails.get(p.card.name, 0) + 1
+                if n >= 2:  # two strikes: stop paying the timeout on every call
+                    self.cooling[p.card.name] = self.clock() + STRIKE_COOLDOWN_S
                 errors.append(f"{p.card.name}: {e}")
                 if on_event:
                     on_event("model.call", {"provider": p.card.name, "role": role, "ok": False, "error": str(e)[:300]})
                 continue
+            self.fails[p.card.name] = 0
             self.last_provider = p.card.name
             if on_event:
                 on_event("model.call", {"provider": p.card.name, "role": role, "ok": True,

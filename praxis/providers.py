@@ -13,9 +13,9 @@ import time
 import urllib.error
 import urllib.request
 
-from .proc import flatten, run_cli
-from .registry import detect_memory_bytes, pick_ollama_model
-from .router import CapabilityCard, Provider, ProviderError, RateLimited
+from .proc import classify, flatten, run_cli
+from .registry import detect_memory_bytes, pick_for_hardware, pick_ollama_model
+from .router import CapabilityCard, ModelUnavailable, Provider, ProviderError, RateLimited
 
 _API_KEYS = {
     "claude": ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"),   # force subscription login, never API billing
@@ -28,11 +28,12 @@ class _CLIProvider(Provider):
     can_complete = True
     can_delegate = True
 
-    def __init__(self, model=None, timeout=300, strip_keys=True):
+    def __init__(self, model=None, timeout=300, strip_keys=True, tier=None):
         self.model = model or None
+        self.tier = tier
         self.timeout = timeout
         self.strip = _API_KEYS.get(self.binary, ()) if strip_keys else ()
-        self.card = CapabilityCard(self.binary, "cloud")
+        self.card = CapabilityCard(f"{self.binary}/{self.model}" if self.model else self.binary, "cloud")
         self.last_meta = {}
 
     def _run(self, argv, stdin, cwd):
@@ -55,20 +56,28 @@ class ClaudeCLI(_CLIProvider):
         return a + (["--model", self.model] if self.model else [])
 
     def _parse(self, out):
+        if "unrecognized_model" in out:
+            raise ModelUnavailable(f"claude: model {self.model!r} is not available on this account")
         try:
             d = json.loads(out)
         except json.JSONDecodeError:
             raise ProviderError("claude: non-JSON output")
         if d.get("is_error"):
             msg = str(d.get("result", ""))[:300]
-            raise (RateLimited if re.search(r"limit|quota|credit", msg, re.I) else ProviderError)(f"claude: {msg}")
+            cls = classify(msg)
+            raise (RateLimited if cls is ProviderError and re.search(r"limit|quota|credit", msg, re.I) else cls)(f"claude: {msg}")
         self.last_meta.update({"cost_usd": d.get("total_cost_usd"), "stop": d.get("stop_reason")})
         return d.get("result", "")
 
     def complete(self, role, messages):
         system, convo = flatten(messages)
-        argv = self._base() + ["--tools", ""] + (["--system-prompt", system] if system else [])
         with tempfile.TemporaryDirectory() as empty:
+            argv = self._base() + ["--tools", ""]
+            if system:  # via file: argv has length/newline limits on Windows (.cmd shims) that a file does not
+                sp = os.path.join(empty, "planner.sysprompt")
+                with open(sp, "w", encoding="utf-8") as f:
+                    f.write(system)
+                argv += ["--system-prompt-file", sp]
             return self._parse(self._run(argv, convo, empty))
 
     def delegate(self, task, cwd):
@@ -144,7 +153,9 @@ class OllamaProvider(Provider):
     can_delegate = False
 
     def __init__(self, host="http://127.0.0.1:11434", model="auto", num_ctx=16384, timeout=900,
-                 memory_bytes=None, registry=None, prefer=()):
+                 memory_bytes=None, registry=None, prefer=(), profile=None, min_tps=6.0):
+        self.profile, self.min_tps = profile, min_tps
+        self.tier = "local"
         self.host = host.rstrip("/")
         self.configured = model
         self.num_ctx, self.timeout = num_ctx, timeout
@@ -174,8 +185,11 @@ class OllamaProvider(Provider):
     def resolve_model(self):
         if self.model:
             return self.model
-        mem = self.memory_bytes if self.memory_bytes is not None else detect_memory_bytes()
-        pick = pick_ollama_model(self.models(), mem, self.registry, self.prefer)
+        if self.profile is not None:  # hardware-aware: VRAM + RAM split, MoE-aware speed estimate, measured wins
+            pick = pick_for_hardware(self.models(), self.profile, self.registry, self.prefer, self.min_tps)
+        else:
+            mem = self.memory_bytes if self.memory_bytes is not None else detect_memory_bytes()
+            pick = pick_ollama_model(self.models(), mem, self.registry, self.prefer)
         if not pick:
             raise ProviderError("ollama: no installed model fits this machine (run `ollama pull <model>`)")
         self.model = pick
@@ -194,7 +208,32 @@ class OllamaProvider(Provider):
         if not text:
             raise ProviderError("ollama: empty response")
         self.last_meta = {"duration_ms": int(d.get("total_duration", 0) / 1e6), "eval_count": d.get("eval_count")}
+        if d.get("eval_count") and d.get("eval_duration"):  # MEASURED decode speed, not an estimate
+            self.last_meta["tokens_per_s"] = round(d["eval_count"] / (d["eval_duration"] / 1e9), 2)
         return text
+
+    def pull(self, tag, on_progress=None):
+        """Download a model (streams Ollama's NDJSON progress). Returns True on success."""
+        req = urllib.request.Request(self.host + "/api/pull", data=json.dumps({"model": tag, "stream": True}).encode(),
+                                     headers={"content-type": "application/json"})
+        ok = False
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as r:
+                for line in r:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    ev = json.loads(line)
+                    if ev.get("error"):
+                        raise ProviderError(f"ollama pull {tag}: {ev['error']}")
+                    if on_progress:
+                        on_progress(ev)
+                    ok = ok or ev.get("status") == "success"
+        except ProviderError:
+            raise
+        except Exception as e:
+            raise ProviderError(f"ollama pull {tag}: {type(e).__name__}: {e}")
+        return ok
 
 
 class DevinProvider(Provider):
