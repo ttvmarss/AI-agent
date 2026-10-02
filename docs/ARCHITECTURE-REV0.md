@@ -27,6 +27,16 @@ Every subsystem below exists to make one arm of this loop stronger, faster, or s
 
 **Starting state of the repository (measured, not assumed):** one commit, a 37-byte README, no code. Sandbox: 4 CPU cores, 15 GB RAM, no GPU, Python 3.11, Node 22. So Phase 1 must run on a laptop-class machine with cloud model APIs; local-GPU features are designed-in but not assumed. (KNOWN — measured this session.)
 
+### 0.1 Clean-room rule and dependency policy
+
+**Clean-room:** PRAXIS reuses **no** existing project, assistant, agent framework, or code from the owner's machines. Everything that defines the system's behavior is written new in this repository.
+
+**Custom (written from scratch — this is the invention):** event-sourced kernel and log, Executive, contracts, Capability Guard and permission engine, Router and capability registry, memory layer, World Model, Project World, verification framework, recovery manager, tool runtime and manifests, specialist runtime, eval harness, UI.
+
+**Commodity (consumed, behind adapters, replaceable):** foundation-model APIs and local model runtimes (components, per the directive), the language runtime and standard library, SQLite, cryptographic and OS primitives, physics/CAD/simulation engines in the lab phases.
+
+**Not used:** off-the-shelf agent/orchestration frameworks (LangChain-style), prior personal projects, inherited prompts or configs. The test for any dependency: *if it vanished tomorrow, would we lose a capability or only a convenience?* Capabilities are built here; conveniences may be borrowed.
+
 ---
 
 ## 1. Ten original AI names
