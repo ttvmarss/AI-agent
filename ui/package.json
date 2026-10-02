@@ -1,0 +1,28 @@
+{
+  "name": "praxis-ui",
+  "private": true,
+  "version": "0.2.0",
+  "description": "The PRAXIS holographic interface (TypeScript, WebGL). Built into ../praxis/ui/static and served by the local PRAXIS server.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run",
+    "e2e": "node e2e/run.mjs",
+    "shots": "node e2e/shots.mjs",
+    "media": "node e2e/media.mjs"
+  },
+  "dependencies": {
+    "three": "^0.170.0",
+    "@fontsource/rajdhani": "^5.1.0",
+    "@fontsource/share-tech-mono": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.170.0",
+    "playwright": "^1.49.0",
+    "typescript": "^5.6.0",
+    "vite": "^6.0.0",
+    "vitest": "^2.1.0"
+  }
+}

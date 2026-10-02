@@ -1,0 +1,1692 @@
+{
+ "version": 1,
+ "name": "Twin Core: JARVIS and FRIDAY",
+ "description": "PRAXIS's one screen. JARVIS (cool ice-blue: listening, talking, idle) and FRIDAY (warm amber: executing) share one core; the one in charge follows the real state. Every number comes from the live run. Edit this file while PRAXIS runs: it reloads within a second.",
+ "min_size": [
+  560,
+  300
+ ],
+ "fonts": {},
+ "palette": {
+  "void": "#02050a",
+  "ink": "#050b13",
+  "panel": {
+   "of": "ink",
+   "alpha": 0.72
+  },
+  "jarvis": "#6fe2ff",
+  "jarvis_dim": "#1d6a88",
+  "friday": "#ff8a32",
+  "friday_dim": "#8a4a1a",
+  "accent": {
+   "persona": [
+    "jarvis",
+    "friday"
+   ]
+  },
+  "accent_dim": {
+   "persona": [
+    "jarvis_dim",
+    "friday_dim"
+   ]
+  },
+  "accent_soft": {
+   "of": "accent",
+   "alpha": 0.35
+  },
+  "text": "#dcecf5",
+  "muted": "#7d93a6",
+  "dim": "#46586a",
+  "ok": "#3de3a1",
+  "warn": "#ffb347",
+  "bad": "#ff4a3d",
+  "violet": "#a99bff",
+  "gold": "#f2b441",
+  "white": "#ffffff"
+ },
+ "persona": {
+  "rate": 1.4
+ },
+ "boot": {
+  "seconds": 3.6,
+  "delay": 0.055,
+  "span": 0.32
+ },
+ "vars": {
+  "wide": "1 if W >= 1000 else 0",
+  "pw": "270 if wide else 0",
+  "R": "max(56, min((H - 215) / 3.9, (W - 2 * pw - 80) / 3.9))",
+  "cx": "W / 2",
+  "cy": "H / 2 + 6",
+  "ph_top": "104",
+  "ph_h": "H - 104 - 178",
+  "lx": "28",
+  "rx": "W - 28 - pw",
+  "by": "H - 160",
+  "voice_color": "'warn' if voice_state == 'muted' else 'bad' if voice_state == 'offline' else 'violet' if voice_state == 'thinking' else 'ok' if voice_state == 'speaking' else 'accent'",
+  "glow_a": "0.55 + 0.45 * sat(core / 1.3)"
+ },
+ "modes": {
+  "idle": {
+   "persona": 0.0,
+   "spin": 0.1,
+   "tick": 0.03,
+   "charge": 0.5,
+   "core": 0.85,
+   "hz": 0.25,
+   "amp": 0.04,
+   "jit": 0.0,
+   "bright": 1.0,
+   "embers": 0.35,
+   "sweep": 0.55,
+   "bolts": 0.1,
+   "flow": 10,
+   "color": "accent"
+  },
+  "starting": {
+   "persona": 0.1,
+   "spin": 1.4,
+   "tick": 0.2,
+   "charge": 0.3,
+   "core": 0.7,
+   "hz": 0.6,
+   "amp": 0.06,
+   "jit": 0.01,
+   "bright": 1.0,
+   "embers": 0.8,
+   "sweep": 2.6,
+   "bolts": 0.6,
+   "flow": 24,
+   "color": "muted"
+  },
+  "working": {
+   "persona": 1.0,
+   "spin": 0.95,
+   "tick": 0.09,
+   "charge": 0.85,
+   "core": 1.1,
+   "hz": 1.0,
+   "amp": 0.06,
+   "jit": 0.01,
+   "bright": 1.1,
+   "embers": 1.6,
+   "sweep": 1.8,
+   "bolts": 1.3,
+   "flow": 44,
+   "color": "accent"
+  },
+  "waiting": {
+   "persona": 0.85,
+   "spin": 0.04,
+   "tick": 0.01,
+   "charge": 0.6,
+   "core": 0.9,
+   "hz": 0.5,
+   "amp": 0.1,
+   "jit": 0.0,
+   "bright": 1.0,
+   "embers": 0.3,
+   "sweep": 0.25,
+   "bolts": 0.08,
+   "flow": 6,
+   "color": "warn"
+  },
+  "ok": {
+   "persona": 0.25,
+   "spin": 0.45,
+   "tick": 0.06,
+   "charge": 1.0,
+   "core": 1.3,
+   "hz": 0.35,
+   "amp": 0.05,
+   "jit": 0.0,
+   "bright": 1.15,
+   "embers": 1.2,
+   "sweep": 1.2,
+   "bolts": 0.8,
+   "flow": 30,
+   "color": "ok"
+  },
+  "bad": {
+   "persona": 1.0,
+   "spin": 0.05,
+   "tick": 0.005,
+   "charge": 0.25,
+   "core": 0.6,
+   "hz": 0.3,
+   "amp": 0.05,
+   "jit": 0.06,
+   "bright": 0.95,
+   "embers": 0.2,
+   "sweep": 0.15,
+   "bolts": 0.55,
+   "flow": 4,
+   "color": "bad"
+  },
+  "stopping": {
+   "persona": 1.0,
+   "spin": 0.0,
+   "tick": 0.0,
+   "charge": 0.1,
+   "core": 0.5,
+   "hz": 0.8,
+   "amp": 0.08,
+   "jit": 0.04,
+   "bright": 1.0,
+   "embers": 0.1,
+   "sweep": 0.0,
+   "bolts": 0.3,
+   "flow": 0,
+   "color": "warn"
+  },
+  "stopped": {
+   "persona": 0.35,
+   "spin": 0.06,
+   "tick": 0.01,
+   "charge": 0.35,
+   "core": 0.65,
+   "hz": 0.25,
+   "amp": 0.03,
+   "jit": 0.0,
+   "bright": 0.9,
+   "embers": 0.15,
+   "sweep": 0.2,
+   "bolts": 0.05,
+   "flow": 4,
+   "color": "warn"
+  }
+ },
+ "states": {
+  "idle": {
+   "color": "dim",
+   "alpha": 0.35,
+   "width": 1.4
+  },
+  "pending": {
+   "color": "muted",
+   "alpha": 0.6,
+   "width": 2.0
+  },
+  "running": {
+   "color": "accent",
+   "alpha": 1.0,
+   "width": 3.2
+  },
+  "waiting": {
+   "color": "warn",
+   "alpha": 1.0,
+   "width": 3.2
+  },
+  "ran": {
+   "color": "jarvis",
+   "alpha": 0.8,
+   "width": 2.8
+  },
+  "verified": {
+   "color": "ok",
+   "alpha": 0.95,
+   "width": 3.0
+  },
+  "denied": {
+   "color": "bad",
+   "alpha": 1.0,
+   "width": 3.2
+  },
+  "failed": {
+   "color": "bad",
+   "alpha": 1.0,
+   "width": 3.2
+  },
+  "rolled back": {
+   "color": "warn",
+   "alpha": 0.7,
+   "width": 2.4
+  }
+ },
+ "glyphs": {
+  "idle": "·",
+  "pending": "◇",
+  "running": "▸",
+  "waiting": "◈",
+  "ran": "◆",
+  "verified": "✓",
+  "denied": "✕",
+  "failed": "✕",
+  "rolled back": "↺"
+ },
+ "stats_order": [
+  "elapsed",
+  "steps",
+  "checks",
+  "brain",
+  "cost"
+ ],
+ "glow": {
+  "x": "max(0, cx - R * 2.15)",
+  "y": "max(0, cy - R * 2.15)",
+  "w": "min(W, R * 4.3)",
+  "h": "min(H, R * 4.3)"
+ },
+ "layers": [
+  {
+   "id": "backdrop",
+   "type": "group",
+   "cache": true,
+   "children": [
+    {
+     "type": "gradient",
+     "x": 0,
+     "y": 0,
+     "w": "W",
+     "h": "H",
+     "kind": "linear",
+     "angle": 90,
+     "stops": [
+      [
+       0,
+       "#030812"
+      ],
+      [
+       0.55,
+       "#040a14"
+      ],
+      [
+       1,
+       "#02050a"
+      ]
+     ]
+    },
+    {
+     "type": "scan",
+     "x": 0,
+     "y": 0,
+     "w": "W",
+     "h": "H",
+     "band": 0,
+     "color": "jarvis_dim",
+     "lines": 4
+    }
+   ]
+  },
+  {
+   "id": "jarvis-dots",
+   "type": "dotgrid",
+   "cache": true,
+   "boot": 1,
+   "opacity": "0.9 * (1 - persona)",
+   "x": 0,
+   "y": 0,
+   "w": "W",
+   "h": "H",
+   "spacing": 26,
+   "r": 0.9,
+   "color": "jarvis_dim",
+   "cx": "cx",
+   "cy": "cy",
+   "fade": "W * 0.62"
+  },
+  {
+   "id": "friday-hex",
+   "type": "hexgrid",
+   "cache": true,
+   "boot": 1,
+   "opacity": "0.8 * persona",
+   "x": 0,
+   "y": 0,
+   "w": "W",
+   "h": "H",
+   "size": 34,
+   "color": {
+    "of": "friday_dim",
+    "alpha": 0.55
+   },
+   "width": 1,
+   "lines": true,
+   "waves": false
+  },
+  {
+   "id": "hex-waves",
+   "type": "hexgrid",
+   "x": 0,
+   "y": 0,
+   "w": "W",
+   "h": "H",
+   "size": 34,
+   "lines": false,
+   "waves": true,
+   "wave_color": "accent",
+   "cx": "cx",
+   "cy": "cy",
+   "opacity": "0.5 + 0.5 * persona"
+  },
+  {
+   "id": "halo",
+   "type": "gradient",
+   "cache": "persona",
+   "kind": "radial",
+   "x": 0,
+   "y": 0,
+   "w": "W",
+   "h": "H",
+   "cx": "cx",
+   "cy": "cy",
+   "r": "R * 3.4",
+   "opacity": "0.55 * boot",
+   "stops": [
+    [
+     0,
+     {
+      "of": "accent",
+      "alpha": 0.2
+     }
+    ],
+    [
+     0.45,
+     {
+      "of": "accent",
+      "alpha": 0.06
+     }
+    ],
+    [
+     1,
+     {
+      "of": "accent",
+      "alpha": 0
+     }
+    ]
+   ]
+  },
+  {
+   "id": "scanner",
+   "type": "scan",
+   "x": 0,
+   "y": 0,
+   "w": "W",
+   "h": "H",
+   "band": 90,
+   "speed": 0.05,
+   "color": "accent",
+   "lines": 0,
+   "opacity": "0.05 + 0.05 * persona"
+  },
+  {
+   "id": "rings-static",
+   "type": "group",
+   "cache": "persona",
+   "boot": 3,
+   "x": "cx",
+   "y": "cy",
+   "children": [
+    {
+     "type": "circle",
+     "r": "R * 1.76",
+     "stroke": "accent_dim",
+     "width": 1,
+     "opacity": 0.5
+    },
+    {
+     "type": "circle",
+     "r": "R * 1.66",
+     "stroke": "accent",
+     "width": 0.8,
+     "dash": "3 7",
+     "opacity": 0.28
+    },
+    {
+     "type": "circle",
+     "r": "R * 1.10",
+     "stroke": "accent_dim",
+     "width": 1,
+     "opacity": 0.6
+    }
+   ]
+  },
+  {
+   "id": "scale",
+   "type": "ticks",
+   "glow": true,
+   "boot": 2,
+   "x": "cx",
+   "y": "cy",
+   "r0": "R * 1.86",
+   "r1": "R * 1.93",
+   "count": 120,
+   "major": 10,
+   "major_len": "R * 0.04",
+   "rot": "rot_b",
+   "color": {
+    "of": "accent",
+    "alpha": 0.5
+   },
+   "major_color": "accent",
+   "width": 1,
+   "major_width": 1.6,
+   "labels": 4,
+   "label_r": "R * 2.02",
+   "size": 7,
+   "label_color": "accent_dim",
+   "opacity": "glow_a"
+  },
+  {
+   "id": "rings-moving",
+   "type": "group",
+   "glow": true,
+   "boot": 3,
+   "x": "cx",
+   "y": "cy",
+   "children": [
+    {
+     "type": "arc",
+     "r": "R * 1.76",
+     "start": "rot_b * 1.5",
+     "span": 70,
+     "color": "accent",
+     "width": 2.2,
+     "opacity": 0.7
+    },
+    {
+     "type": "arc",
+     "r": "R * 1.76",
+     "start": "180 + rot_b * 1.5",
+     "span": 70,
+     "color": "accent",
+     "width": 2.2,
+     "opacity": 0.7
+    },
+    {
+     "type": "arc",
+     "r": "R * 1.10",
+     "start": "-rot_c",
+     "span": 45,
+     "color": "accent",
+     "width": 2.6,
+     "opacity": 0.55
+    },
+    {
+     "type": "arc",
+     "r": "R * 1.10",
+     "start": "120 - rot_c",
+     "span": 45,
+     "color": "accent",
+     "width": 2.6,
+     "opacity": 0.55
+    },
+    {
+     "type": "arc",
+     "r": "R * 1.10",
+     "start": "240 - rot_c",
+     "span": 45,
+     "color": "accent",
+     "width": 2.6,
+     "opacity": 0.55
+    }
+   ]
+  },
+  {
+   "id": "sweep",
+   "type": "sweep",
+   "glow": true,
+   "boot": 4,
+   "x": "cx",
+   "y": "cy",
+   "r": "R * 1.66",
+   "r0": "R * 0.7",
+   "span": 46,
+   "color": "accent"
+  },
+  {
+   "id": "voice",
+   "type": "bars",
+   "glow": true,
+   "boot": 4,
+   "source": "voice",
+   "x": "cx",
+   "y": "cy",
+   "r0": "R * 0.80",
+   "r1": "R * 1.05",
+   "count": 96,
+   "width": 2.2,
+   "color": "accent",
+   "floor": 0.05,
+   "rot": "rot_a * 0.2",
+   "opacity": "0.55 + 0.45 * sat(level * 2 + (1 if voice_state in ('hearing', 'speaking') else 0.2))"
+  },
+  {
+   "id": "gyro-plan",
+   "type": "group",
+   "x": "cx",
+   "y": "cy",
+   "rot": "14 + rot_b * 1.2",
+   "boot": 5,
+   "children": [
+    {
+     "type": "ellipse",
+     "rx": "1.52 * R",
+     "ry": "1.52 * R * 0.38",
+     "color": "accent_dim",
+     "width": 1,
+     "opacity": 0.55
+    },
+    {
+     "type": "repeat",
+     "source": "ring_plan",
+     "item": [
+      {
+       "type": "ellipse",
+       "rx": "1.52 * R",
+       "ry": "1.52 * R * 0.38",
+       "start": "item.start",
+       "span": "item.span",
+       "color": "=item.color",
+       "opacity": "item.alpha",
+       "width": "item.width",
+       "cap": "round"
+      },
+      {
+       "type": "circle",
+       "visible": "item.running",
+       "x": "1.52 * R * sin(rad(item.start + (t * 60) % max(item.span, 1)))",
+       "y": "-1.52 * R * 0.38 * cos(rad(item.start + (t * 60) % max(item.span, 1)))",
+       "r": 3.2,
+       "fill": "white"
+      }
+     ]
+    }
+   ],
+   "glow": true
+  },
+  {
+   "id": "gyro-act",
+   "type": "group",
+   "x": "cx",
+   "y": "cy",
+   "rot": "-38 - rot_a * 0.35",
+   "boot": 6,
+   "children": [
+    {
+     "type": "ellipse",
+     "rx": "1.34 * R",
+     "ry": "1.34 * R * 0.46",
+     "color": "accent_dim",
+     "width": 1,
+     "opacity": 0.55
+    },
+    {
+     "type": "repeat",
+     "source": "ring_act",
+     "item": [
+      {
+       "type": "ellipse",
+       "rx": "1.34 * R",
+       "ry": "1.34 * R * 0.46",
+       "start": "item.start",
+       "span": "item.span",
+       "color": "=item.color",
+       "opacity": "item.alpha",
+       "width": "item.width",
+       "cap": "round"
+      },
+      {
+       "type": "circle",
+       "visible": "item.running",
+       "x": "1.34 * R * sin(rad(item.start + (t * 60) % max(item.span, 1)))",
+       "y": "-1.34 * R * 0.46 * cos(rad(item.start + (t * 60) % max(item.span, 1)))",
+       "r": 3.2,
+       "fill": "white"
+      }
+     ]
+    }
+   ],
+   "glow": true
+  },
+  {
+   "id": "gyro-verify",
+   "type": "group",
+   "x": "cx",
+   "y": "cy",
+   "rot": "62 + rot_c * 0.30",
+   "boot": 7,
+   "children": [
+    {
+     "type": "ellipse",
+     "rx": "1.18 * R",
+     "ry": "1.18 * R * 0.58",
+     "color": "accent_dim",
+     "width": 1,
+     "opacity": 0.55
+    },
+    {
+     "type": "repeat",
+     "source": "ring_verify",
+     "item": [
+      {
+       "type": "ellipse",
+       "rx": "1.18 * R",
+       "ry": "1.18 * R * 0.58",
+       "start": "item.start",
+       "span": "item.span",
+       "color": "=item.color",
+       "opacity": "item.alpha",
+       "width": "item.width",
+       "cap": "round"
+      },
+      {
+       "type": "circle",
+       "visible": "item.running",
+       "x": "1.18 * R * sin(rad(item.start + (t * 60) % max(item.span, 1)))",
+       "y": "-1.18 * R * 0.58 * cos(rad(item.start + (t * 60) % max(item.span, 1)))",
+       "r": 3.2,
+       "fill": "white"
+      }
+     ]
+    }
+   ],
+   "glow": true
+  },
+  {
+   "id": "friday-hex-ring",
+   "type": "hex",
+   "glow": true,
+   "boot": 7,
+   "x": "cx",
+   "y": "cy",
+   "r": "R * 0.92",
+   "rot": "rot_c * 0.6",
+   "stroke": "friday",
+   "width": 1.6,
+   "opacity": "0.85 * persona"
+  },
+  {
+   "id": "jarvis-ring",
+   "type": "circle",
+   "glow": true,
+   "boot": 7,
+   "x": "cx",
+   "y": "cy",
+   "r": "R * 0.92",
+   "stroke": "jarvis",
+   "width": 1,
+   "dash": "2 5",
+   "opacity": "0.55 * (1 - persona)"
+  },
+  {
+   "id": "globe",
+   "type": "sphere",
+   "glow": true,
+   "boot": 8,
+   "x": "cx",
+   "y": "cy",
+   "r": "R * 0.66",
+   "lat": 5,
+   "lon": 9,
+   "rot": "rot_a * 1.6",
+   "tilt": 22,
+   "color": "accent",
+   "width": 1.0,
+   "back": 0.28,
+   "opacity": "0.5 + 0.35 * sat(core / 1.3)"
+  },
+  {
+   "id": "streaks",
+   "type": "streaks",
+   "glow": true,
+   "x": "cx",
+   "y": "cy",
+   "r": "R * 1.7",
+   "color": "accent",
+   "width": 1.6,
+   "opacity": 0.8
+  },
+  {
+   "id": "bolts",
+   "type": "bolts",
+   "glow": true,
+   "x": "cx",
+   "y": "cy",
+   "r": "R * 0.78",
+   "r0": 0.14,
+   "r1": 1.0,
+   "color": "accent",
+   "width": 1.5
+  },
+  {
+   "id": "core",
+   "type": "core",
+   "glow": true,
+   "boot": 8,
+   "x": "cx",
+   "y": "cy",
+   "r": "R * 0.26",
+   "color": "accent",
+   "hot": "white",
+   "level": "core"
+  },
+  {
+   "id": "ripples",
+   "type": "ripples",
+   "glow": true,
+   "x": "cx",
+   "y": "cy",
+   "r": "R * 1.0"
+  },
+  {
+   "id": "shock",
+   "type": "shock",
+   "glow": true,
+   "x": "cx",
+   "y": "cy",
+   "r": "R * 1.3",
+   "color": "gold"
+  },
+  {
+   "id": "embers",
+   "type": "embers",
+   "glow": true,
+   "x": "cx",
+   "y": "cy",
+   "r": "R * 1.7",
+   "color": {
+    "persona": [
+     "white",
+     "#ffd9a8"
+    ]
+   },
+   "size": 1,
+   "opacity": "0.2 + 0.8 * persona"
+  },
+  {
+   "id": "pointer",
+   "type": "poly",
+   "boot": 2,
+   "points": [
+    [
+     "cx - 6",
+     "cy - R * 2.0 - 12"
+    ],
+    [
+     "cx + 6",
+     "cy - R * 2.0 - 12"
+    ],
+    [
+     "cx",
+     "cy - R * 2.0 - 3"
+    ]
+   ],
+   "close": true,
+   "fill": "gold",
+   "opacity": 0.9
+  },
+  {
+   "id": "wordmark",
+   "type": "group",
+   "boot": 9,
+   "children": [
+    {
+     "type": "text",
+     "text": "PRAXIS",
+     "x": 0,
+     "y": 12,
+     "w": "W",
+     "h": 22,
+     "size": 13,
+     "color": "gold",
+     "weight": "bold",
+     "align": "center",
+     "spacing": 9,
+     "glow": 1
+    },
+    {
+     "type": "line",
+     "x1": "cx - 150",
+     "y1": 23,
+     "x2": "cx - 78",
+     "y2": 23,
+     "color": {
+      "of": "gold",
+      "alpha": 0.6
+     },
+     "width": 1.2
+    },
+    {
+     "type": "line",
+     "x1": "cx + 78",
+     "y1": 23,
+     "x2": "cx + 150",
+     "y2": 23,
+     "color": {
+      "of": "gold",
+      "alpha": 0.6
+     },
+     "width": 1.2
+    },
+    {
+     "type": "text",
+     "text": "{title}",
+     "x": 0,
+     "y": 38,
+     "w": "W",
+     "h": 16,
+     "size": 9,
+     "color": "=mode_color",
+     "weight": "bold",
+     "align": "center",
+     "spacing": 4,
+     "glow": 1
+    },
+    {
+     "type": "text",
+     "text": "{subtitle}",
+     "x": "W / 2 - 300",
+     "y": 56,
+     "w": 600,
+     "h": 14,
+     "size": 8,
+     "color": "muted",
+     "weight": "normal",
+     "align": "center",
+     "spacing": 0,
+     "family": "ui",
+     "visible": "not wide"
+    }
+   ]
+  },
+  {
+   "id": "legend",
+   "type": "group",
+   "boot": 10,
+   "visible": "has_goal",
+   "children": [
+    {
+     "type": "repeat",
+     "source": "legend",
+     "x": "cx - 150",
+     "y": 62,
+     "dx": 100,
+     "item": [
+      {
+       "type": "poly",
+       "points": [
+        [
+         4,
+         7
+        ],
+        [
+         8,
+         3
+        ],
+        [
+         12,
+         7
+        ],
+        [
+         8,
+         11
+        ]
+       ],
+       "close": true,
+       "fill": "=item.color"
+      },
+      {
+       "type": "text",
+       "text": "{item.name}",
+       "x": 17,
+       "y": 0,
+       "w": 50,
+       "h": 14,
+       "size": 8,
+       "color": "muted",
+       "weight": "bold",
+       "align": "left",
+       "spacing": 1.5
+      },
+      {
+       "type": "text",
+       "text": "{item.text}",
+       "x": 17,
+       "y": 12,
+       "w": 80,
+       "h": 14,
+       "size": 8,
+       "color": "=item.color",
+       "weight": "bold",
+       "align": "left",
+       "spacing": 0.5
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "minds",
+   "type": "group",
+   "boot": 9,
+   "children": [
+    {
+     "type": "poly",
+     "points": [
+      [
+       28,
+       22
+      ],
+      [
+       34,
+       16
+      ],
+      [
+       40,
+       22
+      ],
+      [
+       34,
+       28
+      ]
+     ],
+     "close": true,
+     "fill": "jarvis",
+     "opacity": "0.3 + 0.7 * (1 - persona)"
+    },
+    {
+     "type": "text",
+     "text": "JARVIS",
+     "x": 46,
+     "y": 14,
+     "w": 80,
+     "h": 16,
+     "size": 8,
+     "color": "jarvis",
+     "weight": "bold",
+     "align": "left",
+     "spacing": 2.5,
+     "opacity": "0.3 + 0.7 * (1 - persona)"
+    },
+    {
+     "type": "poly",
+     "points": [
+      [
+       128,
+       22
+      ],
+      [
+       134,
+       16
+      ],
+      [
+       140,
+       22
+      ],
+      [
+       134,
+       28
+      ]
+     ],
+     "close": true,
+     "fill": "friday",
+     "opacity": "0.3 + 0.7 * persona"
+    },
+    {
+     "type": "text",
+     "text": "FRIDAY",
+     "x": 146,
+     "y": 14,
+     "w": 80,
+     "h": 16,
+     "size": 8,
+     "color": "friday",
+     "weight": "bold",
+     "align": "left",
+     "spacing": 2.5,
+     "opacity": "0.3 + 0.7 * persona"
+    },
+    {
+     "type": "line",
+     "x1": 28,
+     "y1": 36,
+     "x2": 226,
+     "y2": 36,
+     "color": {
+      "of": "accent",
+      "alpha": 0.4
+     },
+     "width": 1
+    },
+    {
+     "type": "text",
+     "text": "{'CONVERSING' if persona < 0.5 else 'EXECUTING'}",
+     "x": 28,
+     "y": 40,
+     "w": 200,
+     "h": 14,
+     "size": 7,
+     "color": "accent_dim",
+     "weight": "bold",
+     "align": "left",
+     "spacing": 2.5
+    }
+   ]
+  },
+  {
+   "id": "voicetag",
+   "type": "group",
+   "boot": 9,
+   "visible": "voice_on",
+   "children": [
+    {
+     "type": "panel",
+     "x": "W - 232",
+     "y": 12,
+     "w": 204,
+     "h": 22,
+     "cut": 7,
+     "stroke": {
+      "of": "accent",
+      "alpha": 0.7
+     },
+     "fill": "panel",
+     "width": 1,
+     "ticks": false
+    },
+    {
+     "type": "circle",
+     "x": "W - 218",
+     "y": 23,
+     "r": 3.2,
+     "fill": "=voice_color",
+     "opacity": "0.55 + 0.45 * pulse(t, 1.4 if voice_state in ('hearing', 'speaking') else 0.0)"
+    },
+    {
+     "type": "text",
+     "text": "{voice_tag}",
+     "x": "W - 208",
+     "y": 14,
+     "w": 176,
+     "h": 18,
+     "size": 8,
+     "color": "=voice_color",
+     "weight": "bold",
+     "align": "left",
+     "spacing": 2
+    }
+   ]
+  },
+  {
+   "id": "frames",
+   "type": "group",
+   "cache": "persona",
+   "boot": 10,
+   "visible": "wide",
+   "children": [
+    {
+     "type": "panel",
+     "x": "lx",
+     "y": "ph_top",
+     "w": "pw",
+     "h": "ph_h",
+     "cut": 16,
+     "stroke": {
+      "of": "accent",
+      "alpha": 0.75
+     },
+     "fill": "panel",
+     "title": "MISSION",
+     "title_color": "accent",
+     "width": 1.1
+    },
+    {
+     "type": "panel",
+     "x": "rx",
+     "y": "ph_top",
+     "w": "pw",
+     "h": "ph_h",
+     "cut": 16,
+     "stroke": {
+      "of": "accent",
+      "alpha": 0.75
+     },
+     "fill": "panel",
+     "title": "MINDS",
+     "title_color": "accent",
+     "width": 1.1
+    },
+    {
+     "type": "panel",
+     "x": "lx",
+     "y": "by",
+     "w": 440,
+     "h": 132,
+     "cut": 16,
+     "stroke": {
+      "of": "accent",
+      "alpha": 0.75
+     },
+     "fill": "panel",
+     "title": "EVENT LOG",
+     "title_color": "accent",
+     "width": 1.1
+    },
+    {
+     "type": "panel",
+     "x": "rx",
+     "y": "by",
+     "w": "pw",
+     "h": 132,
+     "cut": 16,
+     "stroke": {
+      "of": "accent",
+      "alpha": 0.75
+     },
+     "fill": "panel",
+     "title": "TELEMETRY",
+     "title_color": "accent",
+     "width": 1.1
+    }
+   ]
+  },
+  {
+   "id": "mission",
+   "type": "group",
+   "boot": 10,
+   "visible": "wide",
+   "children": [
+    {
+     "type": "text",
+     "text": "{goal}",
+     "x": "lx + 16",
+     "y": "ph_top + 18",
+     "w": "pw - 32",
+     "h": 54,
+     "size": 9.5,
+     "color": "text",
+     "weight": "normal",
+     "align": "left",
+     "spacing": 0,
+     "family": "ui",
+     "wrap": true,
+     "visible": "has_goal"
+    },
+    {
+     "type": "text",
+     "text": "STANDING BY",
+     "x": "lx + 16",
+     "y": "ph_top + 40",
+     "w": "pw - 32",
+     "h": 18,
+     "size": 9,
+     "color": "accent",
+     "weight": "bold",
+     "align": "left",
+     "spacing": 4,
+     "visible": "not has_goal",
+     "opacity": "0.6 + 0.4 * pulse(t, 0.4)"
+    },
+    {
+     "type": "text",
+     "text": "Talk to me. Say what you want done.",
+     "x": "lx + 16",
+     "y": "ph_top + 62",
+     "w": "pw - 32",
+     "h": 36,
+     "size": 9,
+     "color": "muted",
+     "weight": "normal",
+     "align": "left",
+     "spacing": 0,
+     "family": "ui",
+     "wrap": true,
+     "visible": "not has_goal"
+    },
+    {
+     "type": "line",
+     "x1": "lx + 16",
+     "y1": "ph_top + 78",
+     "x2": "lx + pw - 16",
+     "y2": "ph_top + 78",
+     "color": {
+      "of": "accent",
+      "alpha": 0.3
+     },
+     "width": 1,
+     "visible": "has_goal"
+    },
+    {
+     "type": "text",
+     "text": "STEPS  {done}/{nsteps}",
+     "x": "lx + 16",
+     "y": "ph_top + 86",
+     "w": "pw - 32",
+     "h": 14,
+     "size": 7.5,
+     "color": "accent_dim",
+     "weight": "bold",
+     "align": "left",
+     "spacing": 2.5,
+     "visible": "has_goal"
+    },
+    {
+     "type": "repeat",
+     "source": "steps",
+     "limit": 9,
+     "x": "lx + 16",
+     "y": "ph_top + 106",
+     "dy": 22,
+     "visible": "has_goal",
+     "item": [
+      {
+       "type": "text",
+       "text": "{item.glyph}",
+       "x": 0,
+       "y": 0,
+       "w": 16,
+       "h": 18,
+       "size": 10,
+       "color": "=item.color",
+       "weight": "bold",
+       "align": "left",
+       "spacing": 0,
+       "family": "ui",
+       "opacity": "item.alpha"
+      },
+      {
+       "type": "text",
+       "text": "{item.label}",
+       "x": 20,
+       "y": 0,
+       "w": "pw - 120",
+       "h": 18,
+       "size": 8.5,
+       "color": "text",
+       "weight": "normal",
+       "align": "left",
+       "spacing": 0,
+       "family": "ui",
+       "opacity": "0.55 + 0.45 * (1 if item.state in ('running', 'waiting') else 0.5)"
+      },
+      {
+       "type": "text",
+       "text": "{item.state}",
+       "x": "pw - 100",
+       "y": 0,
+       "w": 68,
+       "h": 18,
+       "size": 7,
+       "color": "=item.color",
+       "weight": "bold",
+       "align": "right",
+       "spacing": 1,
+       "upper": true
+      }
+     ]
+    },
+    {
+     "type": "text",
+     "text": "CHECKS  {nchecks}",
+     "x": "lx + 16",
+     "y": "ph_top + 106 + min(nsteps, 9) * 22 + 14",
+     "w": "pw - 32",
+     "h": 14,
+     "size": 7.5,
+     "color": "accent_dim",
+     "weight": "bold",
+     "align": "left",
+     "spacing": 2.5,
+     "visible": "nchecks > 0"
+    },
+    {
+     "type": "repeat",
+     "source": "checks",
+     "limit": 6,
+     "x": "lx + 16",
+     "y": "ph_top + 106 + min(nsteps, 9) * 22 + 34",
+     "dy": 20,
+     "visible": "nchecks > 0",
+     "item": [
+      {
+       "type": "text",
+       "text": "{item.glyph}",
+       "x": 0,
+       "y": 0,
+       "w": 16,
+       "h": 16,
+       "size": 10,
+       "color": "=item.color",
+       "weight": "bold",
+       "align": "left",
+       "spacing": 0,
+       "family": "ui"
+      },
+      {
+       "type": "text",
+       "text": "{'passed' if item.ok else 'FAILED'}",
+       "x": 20,
+       "y": 0,
+       "w": 120,
+       "h": 16,
+       "size": 8,
+       "color": "=item.color",
+       "weight": "bold",
+       "align": "left",
+       "spacing": 1.5,
+       "upper": true
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "minds-panel",
+   "type": "group",
+   "boot": 11,
+   "visible": "wide",
+   "children": [
+    {
+     "type": "repeat",
+     "source": "nodes",
+     "limit": 10,
+     "x": "rx + 34",
+     "y": "ph_top + 44",
+     "dy": 46,
+     "hit_w": "pw - 40",
+     "hit_h": 40,
+     "item": [
+      {
+       "type": "courier",
+       "active": "item.active",
+       "x1": "cx - (rx + 34)",
+       "y1": "cy - (ph_top + 44 + i * 46)",
+       "x2": 0,
+       "y2": 0,
+       "bend": 0.18,
+       "color": "accent",
+       "count": 30,
+       "line": 0.18
+      },
+      {
+       "type": "hex",
+       "x": 0,
+       "y": 0,
+       "r": 11,
+       "rot": 0,
+       "stroke": "=item.color",
+       "fill": {
+        "of": "ink",
+        "alpha": 0.9
+       },
+       "gauge": "item.pressure",
+       "gauge_color": "=item.subcolor",
+       "width": 1.6,
+       "opacity": "0.5 if item.blocked else 1"
+      },
+      {
+       "type": "circle",
+       "x": 0,
+       "y": 0,
+       "r": 3.2,
+       "fill": "=item.color",
+       "opacity": "(0.5 + 0.5 * pulse(t, 1.6)) if item.active else 0.55"
+      },
+      {
+       "type": "text",
+       "text": "{item.name}",
+       "x": 26,
+       "y": -9,
+       "w": "pw - 90",
+       "h": 16,
+       "size": 8.5,
+       "color": "text",
+       "weight": "bold",
+       "align": "left",
+       "spacing": 1.5,
+       "opacity": "1 if (item.active or item.hover) else 0.78"
+      },
+      {
+       "type": "text",
+       "text": "{item.sub}",
+       "x": 26,
+       "y": 6,
+       "w": "pw - 90",
+       "h": 14,
+       "size": 8,
+       "color": "=item.subcolor",
+       "weight": "normal",
+       "align": "left",
+       "spacing": 0,
+       "family": "ui"
+      },
+      {
+       "type": "bar",
+       "x": 26,
+       "y": 24,
+       "w": "pw - 100",
+       "h": 3,
+       "value": "item.pressure",
+       "color": "=item.subcolor",
+       "back": {
+        "of": "dim",
+        "alpha": 0.4
+       },
+       "segments": 20
+      }
+     ]
+    },
+    {
+     "type": "text",
+     "text": "no models available",
+     "x": "rx + 16",
+     "y": "ph_top + 44",
+     "w": "pw - 32",
+     "h": 16,
+     "size": 8,
+     "color": "muted",
+     "weight": "normal",
+     "align": "left",
+     "spacing": 0,
+     "visible": "nnodes == 0"
+    }
+   ]
+  },
+  {
+   "id": "log",
+   "type": "group",
+   "boot": 12,
+   "visible": "wide",
+   "children": [
+    {
+     "type": "repeat",
+     "source": "log",
+     "x": "lx + 14",
+     "y": "by + 16",
+     "dy": 15,
+     "item": [
+      {
+       "type": "text",
+       "text": "{item.time}",
+       "x": 0,
+       "y": 0,
+       "w": 62,
+       "h": 14,
+       "size": 7.5,
+       "color": "dim",
+       "weight": "normal",
+       "align": "left",
+       "spacing": 0,
+       "opacity": "0.35 + 0.65 * (i + 1) / n"
+      },
+      {
+       "type": "text",
+       "text": "{item.text}",
+       "x": 66,
+       "y": 0,
+       "w": 340,
+       "h": 14,
+       "size": 7.5,
+       "color": "=item.color",
+       "weight": "normal",
+       "align": "left",
+       "spacing": 0,
+       "opacity": "0.35 + 0.65 * (i + 1) / n"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "telemetry",
+   "type": "group",
+   "boot": 12,
+   "visible": "wide",
+   "children": [
+    {
+     "type": "repeat",
+     "source": "stats",
+     "x": "rx + 16",
+     "y": "by + 18",
+     "dy": 20,
+     "item": [
+      {
+       "type": "text",
+       "text": "{item.key}",
+       "x": 0,
+       "y": 0,
+       "w": 100,
+       "h": 16,
+       "size": 7.5,
+       "color": "muted",
+       "weight": "normal",
+       "align": "left",
+       "spacing": 1.5
+      },
+      {
+       "type": "text",
+       "text": "{item.value}",
+       "x": 80,
+       "y": 0,
+       "w": "pw - 112",
+       "h": 16,
+       "size": 9,
+       "color": "text",
+       "weight": "bold",
+       "align": "right",
+       "spacing": 0
+      }
+     ]
+    },
+    {
+     "type": "text",
+     "text": "awaiting a goal",
+     "x": "rx + 16",
+     "y": "by + 24",
+     "w": "pw - 32",
+     "h": 16,
+     "size": 8,
+     "color": "dim",
+     "weight": "normal",
+     "align": "left",
+     "spacing": 0,
+     "visible": "not has_goal and not (stats.cost or stats.elapsed)"
+    }
+   ]
+  },
+  {
+   "id": "brackets",
+   "type": "group",
+   "boot": 2,
+   "children": [
+    {
+     "type": "poly",
+     "points": [
+      [
+       8,
+       36
+      ],
+      [
+       8,
+       14
+      ],
+      [
+       14,
+       8
+      ],
+      [
+       36,
+       8
+      ]
+     ],
+     "stroke": "accent",
+     "width": 1.4,
+     "opacity": 0.6
+    },
+    {
+     "type": "poly",
+     "points": [
+      [
+       "W - 8",
+       36
+      ],
+      [
+       "W - 8",
+       14
+      ],
+      [
+       "W - 14",
+       8
+      ],
+      [
+       "W - 36",
+       8
+      ]
+     ],
+     "stroke": "accent",
+     "width": 1.4,
+     "opacity": 0.6
+    },
+    {
+     "type": "poly",
+     "points": [
+      [
+       8,
+       "H - 36"
+      ],
+      [
+       8,
+       "H - 14"
+      ],
+      [
+       14,
+       "H - 8"
+      ],
+      [
+       36,
+       "H - 8"
+      ]
+     ],
+     "stroke": "accent",
+     "width": 1.4,
+     "opacity": 0.6
+    },
+    {
+     "type": "poly",
+     "points": [
+      [
+       "W - 8",
+       "H - 36"
+      ],
+      [
+       "W - 8",
+       "H - 14"
+      ],
+      [
+       "W - 14",
+       "H - 8"
+      ],
+      [
+       "W - 36",
+       "H - 8"
+      ]
+     ],
+     "stroke": "accent",
+     "width": 1.4,
+     "opacity": 0.6
+    }
+   ]
+  }
+ ]
+}

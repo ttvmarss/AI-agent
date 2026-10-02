@@ -1,0 +1,127 @@
+# Copy to  ~/.praxis/praxis.toml  (Windows: %USERPROFILE%\.praxis\praxis.toml)  or  ~/.config/praxis/praxis.toml. Every key is optional.
+# SECURITY: a praxis.toml inside a project folder is UNTRUSTED (it could ship with a downloaded repo) and may only set
+# [hardware], [role_tiers] and [roles]. Provider hosts, sandbox, privacy and limits are read only from your user config.
+
+[providers.claude]          # your Claude subscription, via the official `claude` CLI login
+enabled = true              # models come from [models.claude] below (one instance per tier)
+
+[providers.codex]           # your ChatGPT subscription, via `codex login`
+enabled = true
+
+[providers.droid]           # Factory; needs FACTORY_API_KEY in the environment
+enabled = true
+
+[providers.ollama]          # local, private. "auto" = best installed model that fits this machine
+enabled = true
+host = "http://127.0.0.1:11434"
+model = "auto"              # or a fixed tag, e.g. "qwen3.6:27b"
+prefer = []                 # tags tried first if installed and they fit, e.g. ["qwen3.6:27b"]
+num_ctx = 0                 # 0 = auto: 8192 on <=8 GB VRAM, else 16384
+min_tokens_per_s = 6.0      # models slower than this (measured, else estimated) are not auto-selected
+memory_gb = 0               # legacy flat memory budget; leave 0 and use [hardware] instead
+
+[providers.devin]           # Devin: uses the `devin` CLI (from Devin Desktop) if found, else the cloud API; every task asks your approval
+enabled = true
+mode = "auto"               # auto | cli | api
+model = ""                  # empty = Devin's own adaptive routing
+# for the cloud API instead: set DEVIN_API_KEY and DEVIN_ORG_ID (spends ACUs)
+org_id = ""                 # or env DEVIN_ORG_ID ; key via env DEVIN_API_KEY
+
+# One provider instance per model. "" = your account's default model. Claude IDs were verified live; the others come
+# from vendor docs (2026-10-02) and are validated at runtime: a rejected ID is benched for 6 h and the next one serves.
+[models.claude]
+best = "claude-fable-5-1"       # ~67x the cost of sonnet per trivial call, measured; used for review, not routine planning
+balanced = "claude-opus-5-5"
+fast = "claude-sonnet-5-5"
+
+[models.codex]
+best = "gpt-5.5"
+balanced = ""
+
+[models.droid]
+best = "claude-fable-5.1"       # Factory's id format uses a dot
+balanced = ""
+
+# FREE CLOUD TIERS (use Claude less, and keep working when a Claude window is spent). Each needs a free key:
+#   praxis free              lists them with limits, data terms and where the numbers came from
+#   praxis keys set groq     stores a key in ~/.praxis/secrets.json (0600); or use the env var shown in `praxis free`
+#   (the desktop app's Fuel page has an "Add key" button for each)
+# privacy: TRUSTED tiers (groq, cerebras, ollama-cloud) document that API data is not used for training, so 'project' goals may use them.
+# OPEN tiers (gemini, mistral, nvidia, openrouter) may log or train on prompts: used only for goals you mark 'open', and never
+# when a credential-looking string is in the prompt. Set enabled = false to switch any tier off, or models = [...] to choose models.
+[providers.groq]
+enabled = true
+[providers.cerebras]
+enabled = true
+[providers.ollama-cloud]
+enabled = true
+[providers.gemini]
+enabled = true
+[providers.mistral]
+enabled = true
+[providers.nvidia]
+enabled = true
+[providers.openrouter]       # its free list changes weekly: `praxis free models openrouter`, then:
+enabled = true
+# models = ["<an id ending in :free>"]
+
+# Soft usage budgets: when a model's budget is spent it goes to the BACK of the line (a last resort), never blocks a goal.
+# keys: calls_ | cost_usd_ | tokens_ + 5h | 24h | 7d.  A family name ("claude") is one budget SHARED by all its models.
+# Free tiers get budgets automatically from their documented daily limits. Example (uncomment):
+# [budgets.claude]
+# cost_usd_5h = 8.0
+# calls_24h = 300
+
+[role_tiers]                # which tier each role prefers (until `praxis bench` has measured everything)
+planner   = ["balanced", "best", "fast"]
+replanner = ["balanced", "best", "fast"]
+critic    = ["best", "balanced", "fast"]
+delegate  = ["balanced", "fast", "best"]
+
+# Hardware: leave at 0 to auto-detect. Set these if detection is wrong or to model a different machine.
+# Example for RTX 3050 8 GB + Ryzen 7 7700 + 32 GB DDR5-5200:
+[hardware]
+vram_gb = 0                 # 8 (3050 8GB) or 6 (3050 6GB)
+ram_gb = 0                  # 32
+gpu_name = ""               # "RTX 3050"
+ram_bw_gbps = 0             # ~70 for dual-channel DDR5-5200 (default is a conservative 50)
+gpu_bw_gbps = 0             # auto from the card name (3050 8GB = 224, 3050 6GB = 168)
+
+[roles]                     # preference order per role (the router skips anything unavailable)
+planner   = ["claude", "codex", "droid", "ollama", "ollama-cloud", "groq", "cerebras", "gemini", "mistral", "nvidia", "openrouter"]
+replanner = ["claude", "codex", "droid", "ollama", "ollama-cloud", "groq", "cerebras", "gemini", "mistral", "nvidia", "openrouter"]
+critic    = ["codex", "claude", "droid", "groq", "cerebras", "ollama-cloud", "ollama", "gemini", "mistral", "nvidia", "openrouter"]   # a DIFFERENT family from the planner is always chosen
+
+[routing]
+# "auto"     best quality first; once every candidate is benchmarked, the cheapest within 0.05 of the best wins
+# "frugal"   USE LESS CLAUDE: local model, then free tiers, then Claude small -> large. A cheaper model that fails
+#            verification is retried from scratch (workspace restored) by the next one up. Also the app's FRUGALITY switch.
+# "measured" highest benchmark score regardless of cost    |   "config" the [roles] order above
+strategy = "auto"
+cooldown_s = 900            # fallback rest time after a limit with no stated reset (the provider's Retry-After / reset text wins)
+slack = 0.25                # frugal: a measured model this far below the best measured one goes to the back
+min_quality = 0.6           # frugal: a measured model below this score goes to the back
+escalate = true             # retry a failed-verification goal with the next stronger model
+max_escalations = 2
+
+[limits]
+max_steps = 20
+max_model_calls = 8
+max_cost_usd = 0.0          # 0 = no cap (subscription calls report a list-price estimate)
+max_checkpoint_mb = 512     # PRAXIS copies the folder before each goal so it can undo; refuse folders bigger than this
+
+[voice]
+enabled = true              # speak to it, it speaks back; needs: pip install -e ".[voice]"
+wake_required = false       # false: just talk to it. true: it acts only on sentences that start with the wake word
+wake_word = "praxis"        # the name (also used for approvals: an approval ALWAYS has to start with it)
+voice = "jarvis-high"       # Piper voice, downloaded once (~115 MB): jarvis-high | jarvis-medium | en_US-ryan-high | en_GB-alan-medium ...
+stt_model = "base.en"       # Whisper size: tiny.en (fastest) | base.en | small.en (most accurate)
+attentive_s = 10.0          # seconds after it speaks that you may answer without the name
+approval_s = 60.0           # silence this long on an approval means "deny"
+input_device = ""           # microphone name or index; empty = the system default
+
+[privacy]
+data_class = "project"      # "private" = local (Ollama) only; nothing leaves the machine
+
+[sandbox]
+backend = "auto"            # auto | bwrap | unshare | docker | none
