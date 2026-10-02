@@ -225,6 +225,17 @@ class Nebula:
         m = sc * (1.0 + 0.2 * z2) * (self._radial_disc(i, r) if (self.asm < 1.0 or self.shock is not None) else 1.0)
         return cx + X * m * ASP, cy - Y * m, z2
 
+    def disc_point(self, r, phi, cx, cy, R):
+        """Screen position of a point in the galaxy's own plane at radius r (unit coords) and angle phi: the voice ring uses it
+        so it lies in the same tilted plane as the arms."""
+        ct, st, cr, sr = self._cam()
+        sc = self._scale(R)
+        x, y = r * math.cos(phi + self.rot), r * math.sin(phi + self.rot)
+        y2, z2 = y * ct, y * st
+        X, Y = x * cr - y2 * sr, x * sr + y2 * cr
+        m = sc * (1.0 + 0.2 * z2)
+        return cx + X * m * ASP, cy - Y * m, z2
+
     # -- projection -------------------------------------------------------------------------------------------------------
     def project(self, cx, cy, R, mk=lambda x, y: (x, y)):
         """-> (buckets, sparks). buckets[(b*3 + depth)*VARIANTS + variant] is a list of points (mk(x, y)); depth 0 = back

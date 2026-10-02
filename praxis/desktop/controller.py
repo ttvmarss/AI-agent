@@ -271,6 +271,17 @@ class Controller:
             approvals = [x[0] for x in self._approvals.values()]
         return Update(new, view, approvals, self.state, self.error)
 
+    def pending_approvals(self):
+        """The approvals waiting for an answer right now (safe to call from any thread)."""
+        with self._lock:
+            return [x[0] for x in self._approvals.values()]
+
+    def view_now(self):
+        """The current goal's View, read on the calling thread with its own connection. Does not consume events."""
+        r = self._reader()
+        g = r.last_goal_id()
+        return build_view(r.all(goal_id=g) if g else [])
+
     def mark_read(self):
         """Treat everything currently in the log as already seen (used when a workspace is opened)."""
         r = self._reader()

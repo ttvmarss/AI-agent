@@ -42,6 +42,10 @@ SEG = {"idle": ((110, 140, 190), 60, 1.3), "pending": ((120, 150, 205), 95, 1.5)
        "denied": ((255, 93, 115), 255, 2.6), "failed": ((255, 93, 115), 255, 2.6), "rolled back": ((255, 184, 74), 150, 2.0)}
 REDUCED = bool(os.environ.get("PRAXIS_REDUCE_MOTION"))
 RING_NAMES = ("PLAN", "ACT", "VERIFY")
+VOICE_BARS = 96
+VOICE_TAG = {"listening": "LISTENING  \u00b7  say \u201cpraxis\u201d", "hearing": "HEARING", "thinking": "THINKING",
+             "speaking": "SPEAKING", "muted": "MIC OFF  \u00b7  F4"}
+VOICE_COLOR = {"listening": "accent", "hearing": "accent", "thinking": "violet", "speaking": "ok", "muted": "warn"}
 RING_HALF, RING_HEIGHT = P.ring_extent()
 
 
@@ -66,6 +70,8 @@ class CoreView(QWidget):
         self.footer = ""
         self._sprites, self._aura_cache, self._buf = {}, {}, None
         self._fonts = {}
+        self.voice = dict(state="off", level=0.0, speak=0.0, attentive=False)
+        self._vhist, self._vacc = [0.0] * VOICE_BARS, 0.0
         self.stars = [(((i * 0.6180339887) % 1.0), ((i * 0.7548776662 + 0.31) % 1.0), 0.4 + 0.6 * ((i * 0.5698402909) % 1.0),
                        (i * 1.7) % 6.28) for i in range(110)]
         self._last = time.perf_counter()
@@ -93,6 +99,19 @@ class CoreView(QWidget):
         """The real pipeline, for the three rings. plan: none | planning | ready | failed. steps: each step's state.
         checks: True/False per evidence check. sealed: the goal VERIFIED, so the VERIFY ring closes."""
         self.pipeline = dict(plan=plan, steps=list(steps), checks=[bool(c) for c in checks], sealed=bool(sealed))
+
+    def set_voice(self, state, level=0.0, speak=0.0, attentive=False):
+        """The voice loop's real state: `level` is the live microphone loudness, `speak` the loudness of PRAXIS's own voice."""
+        self.voice = dict(state=state, level=level, speak=speak, attentive=attentive)
+
+    def voice_amplitude(self):
+        """What the voice ring should show right now, 0..1, from the real audio (never invented)."""
+        v = self.voice
+        if v["state"] == "speaking":
+            return min(1.0, v["speak"])
+        if v["state"] in ("hearing", "listening"):
+            return min(1.0, (v["level"] / 0.12) ** 0.6) if v["level"] > 0 else 0.0
+        return 0.0
 
     def set_nodes(self, nodes):
         self.nodes = nodes
@@ -156,6 +175,12 @@ class CoreView(QWidget):
         self.t += dt
         self.field.advance(dt * (0.2 if REDUCED else 1.0))
         self.cap_t += dt
+        self._vacc += dt
+        while self._vacc >= 1 / 30:                       # the voice ring is a short history of the real audio level
+            self._vacc -= 1 / 30
+            self._vhist = self._vhist[1:] + [self._vhist[-1] * 0.55 + self.voice_amplitude() * 0.45]
+        if self.voice["state"] == "speaking":
+            self.field.flare = max(self.field.flare, 0.5 * min(1.0, self.voice["speak"]))     # the seed pulses with her voice
         self.ripples = [r for r in self.ripples if self.t - r[0] < 1.6]
 
     def _tick(self):
@@ -450,6 +475,7 @@ class CoreView(QWidget):
             self._draw_ring(q, g, k, rings[k], back=True, tint=tint)
         layer(1)
         self._seed(q, g, tint, mixv)
+        self._voice_ring(q, g, tint)
         layer(2)
         for x, y, z, i in sparks:                  # warm gold / white / ice sparks that twinkle
             a = f.sparkle_alpha(i)
@@ -486,6 +512,26 @@ class CoreView(QWidget):
         vg.setColorAt(0.0, rgb(col, 0)); vg.setColorAt(0.5, rgb(col, 130)); vg.setColorAt(1.0, rgb(col, 0))
         q.setBrush(vg)
         q.drawRect(QRectF(cx - 0.9, cy - V, 1.8, 2 * V))
+
+    def _voice_ring(self, q, g, tint):
+        """A circular oscilloscope of the real audio, in the galaxy's own plane: the newest sample at the top, the history
+        running clockwise. Cyan while it hears you, green while it speaks, amber when the microphone is off."""
+        st = self.voice["state"]
+        if st == "off":
+            return
+        key = VOICE_COLOR.get(st, "accent")
+        col = QColor(C[key])
+        base = 0.10 if st == "muted" else (0.22 if self.voice["attentive"] else 0.14)
+        f, cx, cy, R = self.field, g["cx"], g["cy"], g["R"]
+        n = VOICE_BARS
+        for i in range(n):
+            v = self._vhist[n - 1 - i]
+            phi = -math.pi / 2 + math.tau * i / n
+            x0, y0, z0 = f.disc_point(0.34, phi, cx, cy, R)
+            x1, y1, z1 = f.disc_point(0.34 + 0.05 + 0.20 * v, phi, cx, cy, R)
+            a = int(255 * min(1.0, base + 0.85 * v) * (0.5 + 0.5 * (0.5 + 0.5 * z0)))
+            q.setPen(QPen(QColor(col.red(), col.green(), col.blue(), a), 1.6 + 1.4 * v))
+            q.drawLine(QPointF(x0, y0), QPointF(x1, y1))
 
     def _draw_ring(self, q, g, which, pts, back, tint):
         """One gimbal ring. Its segments are the REAL steps / checks; the front and back halves are drawn on either side of
@@ -663,6 +709,19 @@ class CoreView(QWidget):
             p.setPen(QColor(col.red(), col.green(), col.blue(), 255 if key != "dim" else 130))
             p.drawText(QRectF(x + 14 + fm.horizontalAdvance(name) + 6, 62, 90, 14), Qt.AlignVCenter | Qt.AlignLeft, text)
             x += wd
+        vs = self.voice["state"]
+        if vs in VOICE_TAG:                                                 # the real voice state, top right
+            tag = VOICE_TAG[vs] if not (vs == "listening" and self.voice["attentive"]) else "LISTENING  \u00b7  go ahead"
+            tc = QColor(C[VOICE_COLOR[vs]])
+            p.setFont(self._font(self.mono, 8, QFont.Bold, 2))
+            fmt = QFontMetricsF(self._font(self.mono, 8, QFont.Bold, 2))
+            tw = fmt.horizontalAdvance(tag) + 22
+            p.setPen(Qt.NoPen); p.setBrush(QColor(3, 8, 14, 170))
+            p.drawRoundedRect(QRectF(w - tw - 18, 12, tw, 20), 10, 10)
+            pulse = 0.6 + 0.4 * math.sin(self.t * 4.0) if vs in ("hearing", "speaking") else 1.0
+            p.setBrush(QColor(tc.red(), tc.green(), tc.blue(), int(255 * pulse))); p.drawEllipse(QPointF(w - tw - 6, 22), 3.2, 3.2)
+            p.setPen(QColor(tc.red(), tc.green(), tc.blue(), 235))
+            p.drawText(QRectF(w - tw - 18 + 16, 12, tw - 16, 20), Qt.AlignVCenter | Qt.AlignLeft, tag)
         if self.caption:                                                     # caption: typed out in a dark box, like the reference
             f3 = self._font(self.mono, 10)
             p.setFont(f3)

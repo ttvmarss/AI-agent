@@ -13,6 +13,12 @@ try:
     from praxis.desktop.qt.app import MainWindow, STRATEGY, apply_view
     from praxis.desktop.qt.core import CoreView
     from praxis.desktop.qt.dialogs import ApprovalDialog
+    from praxis.desktop.voice_actions import ControllerActions
+    from praxis.desktop.voice_setup import VoiceUnavailable
+    from praxis.voice.devices import FakeMic, FakeSpeaker
+    from praxis.voice.loop import VoiceLoop
+    from praxis.voice.stt import FakeRecognizer
+    from praxis.voice.tts import FakeVoice
     HAVE_QT = True
 except Exception:  # PySide6 missing (or no usable platform plugin)
     HAVE_QT = False
@@ -27,6 +33,17 @@ from praxis.sandbox import Sandbox
 from praxis.usage import UsageTracker
 import tests.test_desktop_controller as tdc
 from tests.test_desktop_controller import FakeAgent, GOOD, fake_stack
+
+
+def fake_voice(controller, vcfg, progress=None, on_mute=None, texts=(), speak=True):
+    """A running voice loop on fake audio devices: what a healthy voice looks like to the window, with no hardware."""
+    loop = VoiceLoop(ControllerActions(controller, on_mute), FakeRecognizer(texts), FakeMic(), FakeSpeaker(), FakeVoice(), speak=speak)
+    loop.start()
+    return loop
+
+
+def no_voice(*a, **k):
+    raise VoiceUnavailable("disabled for this test")
 
 
 class FakeTelemetry:
@@ -93,12 +110,12 @@ class OneScreen(unittest.TestCase):
     def setUpClass(cls):
         cls.app = qapp()
 
-    def make(self, stack=None, factory=None, approval_timeout=900.0, responses=None, agents=None, hook=None):
+    def make(self, stack=None, factory=None, approval_timeout=900.0, responses=None, agents=None, hook=None, voice_factory=None):
         ws, home = tempfile.mkdtemp(), tempfile.mkdtemp()
         st = stack or fake_stack(responses or [GOOD], agents, hook)
         ctl = Controller(ws, stack_factory=factory or (lambda w: st), home=home, approval_timeout=approval_timeout)
         ctl.start()
-        win = MainWindow(ctl)
+        win = MainWindow(ctl, voice_factory=voice_factory or fake_voice)
         win.show()
         self.addCleanup(lambda: (ctl.stop(), setattr(win, "_closing", True), win.timer.stop(), win.close()))
         self.assertTrue(pump(lambda: ctl.state == "idle"), ctl.error)
@@ -117,13 +134,18 @@ class OneScreen(unittest.TestCase):
         return multi_stack(ps, skipped={"cerebras": "no API key", "devin": "no DEVIN_API_KEY"}, **kw)
 
     # ---- it really is just the core -------------------------------------------------------------------------------
-    def test_the_window_is_the_core_and_one_prompt_line_and_nothing_else(self):
+    def test_the_window_is_just_the_core_there_is_no_chat_box_and_no_mic_button(self):
         win, ctl, ws = self.make()
-        self.assertEqual(win.menuBar().actions(), [])                                  # no menu
-        self.assertEqual(win.findChildren(QToolBar), []); self.assertEqual(win.findChildren(QPushButton), [])   # no toolbars, no buttons
-        self.assertEqual(len(win.findChildren(CoreView)), 1); self.assertEqual(len(win.findChildren(QLineEdit)), 1)
-        self.assertTrue(win.core.isVisible() and win.prompt.isVisible())
-        self.assertGreater(win.core.height(), win.height() * 0.7)                      # the core owns the window
+        self.assertEqual(win.menuBar().actions(), [])
+        self.assertEqual(win.findChildren(QToolBar), []); self.assertEqual(win.findChildren(QPushButton), [])
+        self.assertEqual(len(win.findChildren(CoreView)), 1)
+        self.assertGreater(win.core.height(), win.height() * 0.95)                      # the core owns the whole window
+        self.assertTrue(pump(lambda: win.voice is not None, 5)); self.assertFalse(win.prompt.isVisible())   # voice is up: no typing line
+
+    def test_when_voice_cannot_start_a_typing_line_appears_so_the_app_is_never_unusable(self):
+        win, ctl, ws = self.make(voice_factory=no_voice)
+        self.assertTrue(pump(lambda: win.prompt.isVisible(), 5))
+        self.assertIn("Voice is unavailable: disabled for this test", win.core.caption)
 
     def test_comes_up_ready_with_the_live_settings_on_the_core(self):
         win, ctl, ws = self.make(stack=self.rich_stack(strategy="frugal"))
@@ -168,7 +190,7 @@ class OneScreen(unittest.TestCase):
         """Regression: the history snapshot must not swallow the first goal's events."""
         ws, home = tempfile.mkdtemp(), tempfile.mkdtemp()
         ctl = Controller(ws, stack_factory=lambda w: fake_stack([GOOD]), home=home); ctl.start()
-        win = MainWindow(ctl); win.show()
+        win = MainWindow(ctl, voice_factory=fake_voice); win.show()
         self.addCleanup(lambda: (setattr(win, "_closing", True), win.timer.stop(), win.close()))
         end = time.time() + 5
         while ctl.state != "idle" and time.time() < end:      # wait WITHOUT letting the UI tick even once
@@ -181,7 +203,7 @@ class OneScreen(unittest.TestCase):
         gate = threading.Event()
         ws, home = tempfile.mkdtemp(), tempfile.mkdtemp()
         ctl = Controller(ws, stack_factory=lambda w: fake_stack([GOOD], hook=lambda: gate.wait(10)), home=home); ctl.start()
-        win = MainWindow(ctl); win.show()
+        win = MainWindow(ctl, voice_factory=fake_voice); win.show()
         self.addCleanup(lambda: (gate.set(), setattr(win, "_closing", True), win.timer.stop(), win.close()))
         pulses = []
         orig = win.core.pulse
@@ -260,7 +282,7 @@ class OneScreen(unittest.TestCase):
         gate = threading.Event()
         ws, home = tempfile.mkdtemp(), tempfile.mkdtemp()
         ctl = Controller(ws, stack_factory=lambda w: (gate.wait(10), fake_stack([GOOD]))[1], home=home); ctl.start()
-        win = MainWindow(ctl); win.show()
+        win = MainWindow(ctl, voice_factory=fake_voice); win.show()
         self.addCleanup(lambda: (gate.set(), setattr(win, "_closing", True), win.timer.stop(), win.close()))
         self.assertTrue(pump(lambda: "Booting" in win.core.caption, 3))
         self.assertEqual(win.core.footer, ""); self.assertFalse(win.prompt.isEnabled())
@@ -268,7 +290,7 @@ class OneScreen(unittest.TestCase):
         self.assertTrue(pump(lambda: win.core.title == "READY", 5)); self.assertTrue(win.prompt.isEnabled())
         def boom(w): raise RuntimeError("no providers configured")
         ctl2 = Controller(tempfile.mkdtemp(), stack_factory=boom, home=tempfile.mkdtemp()); ctl2.start()
-        win2 = MainWindow(ctl2); win2.show()
+        win2 = MainWindow(ctl2, voice_factory=fake_voice); win2.show()
         self.addCleanup(lambda: (setattr(win2, "_closing", True), win2.timer.stop(), win2.close()))
         self.assertTrue(pump(lambda: win2.core.title == "ERROR", 5))
         self.assertIn("no providers configured", win2.core.caption); self.assertEqual(win2.core.cap_level, "bad")
@@ -395,7 +417,8 @@ class OneScreen(unittest.TestCase):
 
     # ---- layout and folders -------------------------------------------------------------------------------------------------------
     def test_at_the_minimum_size_the_core_and_the_prompt_do_not_overlap(self):
-        win, ctl, ws = self.make(stack=self.rich_stack())
+        win, ctl, ws = self.make(stack=self.rich_stack(), voice_factory=no_voice)   # the typing line only shows when voice is unavailable
+        self.assertTrue(pump(lambda: win.prompt.isVisible(), 5))
         win.resize(win.minimumWidth(), win.minimumHeight()); pump(lambda: False, 0.2)
         self.assertLessEqual(win.minimumSizeHint().height(), win.minimumHeight()); self.assertLessEqual(win.minimumSizeHint().width(), win.minimumWidth())
         self.assertLessEqual(win.core.geometry().bottom(), win.prompt.parentWidget().geometry().top() + 1)

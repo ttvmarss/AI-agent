@@ -59,6 +59,9 @@ DEFAULTS = {
     "limits": {"max_steps": 20, "max_model_calls": 8, "max_cost_usd": 0.0},
     "privacy": {"data_class": "project"},
     "sandbox": {"backend": "auto"},   # auto | bwrap | unshare | docker | none
+    # Hands-free voice (pip install faster-whisper piper-tts sounddevice). User config only: a project folder cannot touch it.
+    "voice": {"enabled": True, "wake_word": "praxis", "stt_model": "base.en", "voice": "en_GB-alan-medium", "speak": True,
+              "attentive_s": 10.0, "approval_s": 60.0, "input_device": ""},
 
 }
 

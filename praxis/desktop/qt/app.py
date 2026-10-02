@@ -1,12 +1,14 @@
-"""PRAXIS: one screen. The window IS the core ("The Loom") plus a single prompt line. No menus, pages or panels.
+"""PRAXIS: one screen, and you talk to it. The window IS the core ("The Loom"). No menus, pages, chat box or mic button.
 
-  type an outcome, Enter   run it            Esc / Ctrl+.   STOP (kills in-flight calls, restores the workspace)
-  F2                       cycle DATA class  F3             cycle FRUGALITY      Ctrl+O  open a folder    Ctrl+R  resume
+  say "PRAXIS, <outcome>"   run it (it answers out loud)     Esc / Ctrl+. / say "stop"   STOP (restores the workspace)
+  F2 / F3  data class / frugality     F4  mute the microphone     Ctrl+O  open a folder     Ctrl+R  resume
+(If voice cannot start - no microphone, engine missing - a typing line appears so the app is never unusable.)
 Everything you need to know is on the core itself (state, rings, stream, caption, the live settings in the footer).
 Lessons carried over from the earlier shells (each one was a real bug): the "stack is ready" snapshot runs BEFORE the first
 poll, because a poll consumes events; a rendering error is shown, never fatal; an approval is asked about once.
 """
 import os
+import threading
 import time
 
 from PySide6.QtCore import QTimer, Qt
@@ -16,6 +18,7 @@ from PySide6.QtWidgets import (QApplication, QFileDialog, QLineEdit, QMainWindow
 from ..view import View, summarize
 from . import theme
 from .core import CoreView
+from ..voice_setup import VoiceUnavailable, build_voice
 from .dialogs import ApprovalDialog
 from .theme import C
 from .widgets import Backdrop
@@ -69,9 +72,11 @@ def apply_view(core, v, state, waiting, hint="", error=""):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, controller, telemetry=None):
+    def __init__(self, controller, telemetry=None, voice_factory=None):
         super().__init__()
         self.controller = controller
+        self.voice_factory, self.voice, self.voice_error, self.voice_progress = voice_factory, None, "", ""
+        self._voice_started, self._voice_msg_shown, self._mute_request, self._heard_at = False, False, False, 0.0
         self._shown, self._loaded_ws, self._closing = set(), None, False
         self._prev_state, self.hint = None, ""
         self.setWindowTitle("PRAXIS")
@@ -90,9 +95,10 @@ class MainWindow(QMainWindow):
         self.prompt.returnPressed.connect(self.run_goal)
         bl.addWidget(self.prompt)
         lay.addWidget(bar, 0)
-        self.prompt.setFocus()
+        self.prompt_bar = bar
+        bar.hide()                       # no chat box: it only appears if voice cannot start
         for key, slot in (("Esc", self._escape), ("Ctrl+.", self.stop), ("F2", self.cycle_data), ("F3", self.cycle_frugality),
-                          ("Ctrl+O", self.open_folder), ("Ctrl+R", self.resume_goal)):
+                          ("F4", self.toggle_mute), ("Ctrl+O", self.open_folder), ("Ctrl+R", self.resume_goal)):
             QShortcut(QKeySequence(key), self, slot)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick)
@@ -124,6 +130,45 @@ class MainWindow(QMainWindow):
         if self.controller.state in ("working", "stopping"):
             self.controller.stop()
             self.note("Stopping: killing in-flight model calls and restoring the workspace...", "warn")
+
+    def toggle_mute(self):
+        if self.voice is None:
+            self.note("Voice is not running.", "warn")
+            return
+        self.voice.set_muted(not self.voice.muted)
+        self.note("Microphone off. Press F4 to listen again." if self.voice.muted else "Listening.", "warn" if self.voice.muted else "info")
+
+    def _start_voice(self):
+        """Bring the voice up in the background (model downloads and loading take seconds); the window stays alive meanwhile."""
+        if self._voice_started:
+            return
+        self._voice_started = True
+        st = self.controller.stack
+        vcfg = dict(st.cfg.get("voice", {})) if st is not None else {}
+        if not vcfg.get("enabled", True) and self.voice_factory is None:
+            self.voice_error = "voice is switched off in your config"
+            return
+
+        def work():
+            try:
+                factory = self.voice_factory or build_voice
+                loop = factory(self.controller, vcfg, progress=lambda t, f=None: setattr(self, "voice_progress", t),
+                               on_mute=lambda: setattr(self, "_mute_request", True))
+                self.voice = loop
+                self.voice_progress = ""
+                loop.say("PRAXIS online. Say my name, then tell me what you need.")
+            except VoiceUnavailable as e:
+                self.voice_error = str(e)
+            except Exception as e:
+                self.voice_error = f"{type(e).__name__}: {e}"
+        threading.Thread(target=work, daemon=True, name="praxis-voice-start").start()
+
+    def _voice_fallback(self):
+        """Voice could not start: show the typing line (once) and say why."""
+        self._voice_msg_shown = True
+        self.prompt_bar.show(); self.prompt.setFocus()
+        self.prompt.setPlaceholderText("Voice is off. Type an outcome here, Enter to run.")
+        self.note(f"Voice is unavailable: {self.voice_error}. Type your outcome below.", "warn")
 
     def _escape(self):
         if self.controller.state in ("working", "stopping"):
@@ -180,6 +225,8 @@ class MainWindow(QMainWindow):
         state = c.state
         if state in ("idle", "working", "stopping") and self._loaded_ws != c.workspace:
             self._on_ready()   # BEFORE the first poll (a poll consumes events); tied to "stack built", not to idle
+        if state not in ("starting", "error"):
+            self._start_voice()
         u = c.poll() if state not in ("starting", "error") else None
         waiting = False
         if u is not None:
@@ -189,6 +236,8 @@ class MainWindow(QMainWindow):
                 self.core.pulse(level)               # a real event: the seed flares, a ripple runs through the galaxy
             if text:
                 self.core.set_caption(text, level)   # and the latest one is typed out
+            if self.voice is not None and u.events:
+                self.voice.conductor.on_events(u.events)     # the milestones among them are spoken
             waiting = (bool(u.approvals) or u.view.status == "WAITING FOR YOU") and state == "working"
             apply_view(self.core, u.view, state, waiting, self.hint, c.error)
             for req in u.approvals:
@@ -199,12 +248,30 @@ class MainWindow(QMainWindow):
                 self.prompt.setFocus()
         else:
             apply_view(self.core, View(), state, False, self.hint, c.error)
+        self._update_voice(state)
         self.core.set_nodes(c.nodes())
         self.core.set_footer(self._footer(state))
         self.prompt.setEnabled(state != "starting")
         if c.notes:
             self.note(c.notes.pop(), "bad")
         self._prev_state = state
+
+    def _update_voice(self, state):
+        if self._mute_request:                       # "praxis, mute" arrives from the voice thread
+            self._mute_request = False
+            if self.voice is not None and not self.voice.muted:
+                self.toggle_mute()
+        if self.voice is not None:
+            snap = self.voice.snapshot()
+            self.core.set_voice(snap["state"], snap["level"], snap["speak_level"], snap["attentive"])
+            tr = self.voice.transcripts
+            if tr and tr[-1][0] > self._heard_at and not tr[-1][2].startswith("ignored"):
+                self._heard_at = tr[-1][0]
+                self.core.set_caption(f"\u201c{tr[-1][1].strip()}\u201d", "info")      # what it heard you say, so a mishearing is visible
+        elif self.voice_error and not self._voice_msg_shown:
+            self._voice_fallback()
+        elif self.voice_progress and state in ("idle", "starting"):
+            self.core.set_caption(self.voice_progress)
 
     def _footer(self, state):
         """Real settings, shown under the core: how it is routing, what data it may touch, how many models it can reach."""
@@ -216,8 +283,10 @@ class MainWindow(QMainWindow):
 
     def _ask(self, req):
         dlg = ApprovalDialog(self, req)
+        dlg.watch(lambda rid: any(r.id == rid for r in self.controller.pending_approvals()))   # closes itself if answered by voice
         dlg.exec()
-        self.controller.respond(req.id, dlg.answer)    # closing the dialog any other way is a refusal
+        if not dlg.answered_elsewhere:
+            self.controller.respond(req.id, dlg.answer)    # closing the dialog any other way is a refusal
 
     def _on_ready(self):
         c = self.controller
@@ -247,6 +316,8 @@ class MainWindow(QMainWindow):
                 QApplication.processEvents()
                 time.sleep(0.05)
         self._closing = True
+        if self.voice is not None:
+            self.voice.close()
         try:
             c.settings.geometry = f"{self.width()}x{self.height()}"
             c.settings.save()

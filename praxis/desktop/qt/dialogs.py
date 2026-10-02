@@ -1,5 +1,5 @@
 """Approval and key dialogs. The approval dialog shows the EXACT action and defaults to Deny."""
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import (QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QVBoxLayout)
 
 from ..approvals import LEGEND, describe
@@ -9,7 +9,7 @@ from .theme import C, fonts
 class ApprovalDialog(QDialog):
     def __init__(self, parent, req):
         super().__init__(parent)
-        self.req, self.answer = req, False
+        self.req, self.answer, self.answered_elsewhere = req, False, False
         title, tone, meaning = LEGEND.get(req.cls, (f"CLASS {req.cls}", "warn", ""))
         self.setWindowTitle("PRAXIS needs your approval")
         self.setModal(True)
@@ -33,6 +33,19 @@ class ApprovalDialog(QDialog):
         self.deny_btn.clicked.connect(self.reject)
         self.ok_btn.clicked.connect(self._approve)
         self.deny_btn.setDefault(True); self.deny_btn.setFocus()      # the safe choice holds the keyboard focus
+
+    def watch(self, is_pending):
+        """Close this dialog by itself if the request is answered somewhere else (by voice): it must never sit on screen
+        asking a question that was already answered."""
+        self.answered_elsewhere = False
+        t = QTimer(self); t.timeout.connect(lambda: self._check(is_pending)); t.start(120)
+        self._watch = t
+
+    def _check(self, is_pending):
+        if not is_pending(self.req.id):
+            self.answered_elsewhere = True
+            self._watch.stop()
+            super().reject()
 
     def _approve(self):
         self.answer = True

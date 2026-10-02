@@ -1,0 +1,169 @@
+"""The conductor: turns what was heard into actions, and what happened into what is said. Thread-safe, engine-free, testable.
+
+Rules that hold whatever the recogniser hears:
+  * a wake word is needed, except (a) STOP while something is running and (b) the answer to a pending approval;
+  * after PRAXIS speaks to you (or finishes) there is a short hands-free window with no wake word needed;
+  * a risky approval (Class 4+) needs the literal word "approve"; a bare "yes" only asks again; silence means DENY;
+  * while an approval is pending nothing else can become a goal; while a goal runs a new one is refused;
+  * it never acts on text it already acted on in the last few seconds (an echo or a repeat).
+"""
+import threading
+import time
+
+from . import narrator, wake
+
+PHANTOM = {"thank you", "thanks", "thanks for watching", "you", "bye", "okay", "ok", "hmm", "uh", "um", "the", "so", "yeah"}
+
+
+class Conductor:
+    def __init__(self, actions, say, clock=time.monotonic, wake_word="praxis", attentive_s=10.0, approval_s=60.0, log=None):
+        self.a, self.say, self.clock = actions, say, clock
+        self.wake_word, self.attentive_s, self.approval_s = wake_word, attentive_s, approval_s
+        self.log = log or (lambda *_: None)
+        self.lock = threading.RLock()
+        self.attentive_until = 0.0
+        self.last_text, self.last_at = "", -99.0
+        self.asked = {}                 # approval id -> (asked_at, reminded)
+        self.spoken_reports = set()
+        self.last_unknown_at = -99.0
+
+    # ---- what was heard --------------------------------------------------------------------------------------------
+    def hear(self, text):
+        """Handle one transcript. Returns what it did (also useful in tests and logs)."""
+        with self.lock:
+            now = self.clock()
+            norm = wake.normalize(text)
+            if not norm or norm in PHANTOM:
+                return "ignored: noise"
+            if norm == self.last_text and now - self.last_at < 4.0:
+                return "ignored: repeat"
+            heard_wake, rest = wake.split_wake(text, self.wake_word)
+            pending = self.a.pending()
+            approving = bool(pending)
+            busy = self.a.state() in ("working", "stopping")
+            attentive = now < self.attentive_until
+            safe_stop = busy and wake.STOP.match(norm) is not None
+            if not (heard_wake or approving or attentive or safe_stop):
+                return "ignored: no wake word"
+            self.last_text, self.last_at = norm, now
+            risky = bool(pending) and pending[0].cls >= 4
+            original = rest if heard_wake else (text or "").strip()
+            intent = wake.parse(original, busy=busy, approving=approving, risky=risky)
+            self.log("heard", text, intent.kind)
+            return self._act(intent, pending, heard_wake, busy, now)
+
+    def _act(self, it, pending, heard_wake, busy, now):
+        k = it.kind
+        if k == "stop":
+            if busy:
+                self.a.stop(); self.say("Stopping. I'll restore the workspace.", True)
+                return "stop"
+            self.say("Nothing is running.")
+            return "nothing to stop"
+        if k in ("approve", "deny") and pending:
+            req = pending[0]
+            ok = k == "approve"
+            self.a.respond(req.id, ok)
+            self.asked.pop(req.id, None)
+            self.say("Approved." if ok else "Denied. Nothing was changed.")
+            self._attend(now)
+            return k
+        if k == "confirm_risky":
+            self.say("That one is risky. Say approve to allow it, or deny.")
+            return "asked again"
+        if k == "unknown":
+            if now - self.last_unknown_at > 8.0:
+                self.say("I'm waiting for your answer. Say approve, or deny.")
+                self.last_unknown_at = now
+            return "waiting for answer"
+        if k == "mute":
+            self.a.mute()
+            self.say("Muted. Press F4 to listen again.", True)
+            return "mute"
+        if k == "wake_only":
+            self.say("Yes?"); self._attend(now)
+            return "wake"
+        if k == "status":
+            self.say(self.a.status_text()); self._attend(now)
+            return "status"
+        if k == "resume":
+            if self.a.resume():
+                self.say("Resuming the interrupted goal.")
+            else:
+                self.say("There's nothing to resume.")
+            self._attend(now)
+            return "resume"
+        if k == "data":
+            self.a.set_data(it.arg)
+            self.say({"private": "Data class private. Only local models will see your goals.",
+                      "project": "Data class project. Local models and providers that don't train on your data.",
+                      "open": "Data class open. Free tiers that may train on prompts are allowed, but never with a credential in the prompt."}[it.arg])
+            self._attend(now)
+            return "data"
+        if k == "frugal":
+            key = "quality" if it.arg in ("quality", "best") else it.arg
+            self.a.set_frugality(key)
+            self.say({"frugal": "Frugal mode. Local models first, then free tiers, then Claude from small to large.",
+                      "balanced": "Balanced mode.", "quality": "Quality mode. Best model, whatever the cost."}[key])
+            self._attend(now)
+            return "frugal"
+        if k == "goal":
+            words = it.arg.split()
+            if len(words) < (2 if heard_wake else 3) or len(it.arg) > 600:
+                if heard_wake:
+                    self.say("Sorry, I didn't catch that.")
+                return "ignored: too short"
+            if busy:
+                self.say("I'm still working on the last goal. Say stop to cancel it.")
+                return "busy"
+            if self.a.pending():
+                return "ignored: approval pending"
+            if self.a.submit(it.arg):
+                self.say(f"Understood. {narrator.clean(it.arg, 110)}.")
+                self._attend(now)
+                return "goal"
+            self.say("I can't start that right now.")
+            return "refused"
+        return "ignored"
+
+    def _attend(self, now):
+        self.attentive_until = max(self.attentive_until, now + self.attentive_s)
+
+    # ---- what happened -----------------------------------------------------------------------------------------------
+    def on_events(self, events):
+        """Speak the milestones among these real events (each final report only once)."""
+        with self.lock:
+            for e in events:
+                if e.type == "goal.report":
+                    if e.id in self.spoken_reports:
+                        continue
+                    self.spoken_reports.add(e.id)
+                sentence, urgent = narrator.for_event(e.type, e.payload)
+                if sentence:
+                    self.say(sentence, urgent)
+                    if urgent:
+                        self._attend(self.clock())
+
+    def tick(self):
+        """Call a few times a second: asks about new approvals, reminds, and denies on silence."""
+        with self.lock:
+            now = self.clock()
+            pending = self.a.pending()
+            live = {r.id for r in pending}
+            for rid in list(self.asked):
+                if rid not in live:
+                    del self.asked[rid]
+            for req in pending:
+                if req.id not in self.asked:
+                    self.asked[req.id] = [now, False]
+                    self.say(narrator.approval_prompt(req), True)
+                    self.attentive_until = max(self.attentive_until, now + self.approval_s)
+                    continue
+                at, reminded = self.asked[req.id]
+                if now - at > self.approval_s:
+                    self.a.respond(req.id, False)
+                    self.asked.pop(req.id, None)
+                    self.say("No answer, so I denied that. Nothing was changed.", True)
+                elif not reminded and now - at > self.approval_s / 3:
+                    self.asked[req.id][1] = True
+                    self.say("Still waiting: approve or deny?", True)
