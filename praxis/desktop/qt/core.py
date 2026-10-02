@@ -1,15 +1,16 @@
-"""The PRAXIS core, "The Loom": a galaxy of particles streaming along spiral arms around a bright seed, crossed by three
-gimbal rings. Every visual encodes real state:
+"""The PRAXIS core, "The Reactor": an arc reactor in its housing, ringed by flat HUD gauge rings, in gold and gunmetal. Every visual
+encodes real state:
 
-  arm flow            INWARD while PRAXIS is working (it takes your goal in), still when it needs you, OUTWARD on VERIFIED
-  colour / spin       the state: idle, starting, working, needs-you, verified, failed, stopping (STOP collapses it fast)
-  PLAN ring (outer)   planning (a comet circles it) -> ready (lit) -> rejected (red)
-  ACT ring (middle)   one arc per REAL step, coloured by that step's state; the running step has a comet
-  VERIFY ring (inner) one arc per REAL check (green pass, red fail); when the goal verifies it SEALS into a closed green ring
-  seed flare          every real event pulses the bright seed and sends a ripple through the galaxy
-  particle stream     a call to that provider is in flight RIGHT NOW (View.active_provider, from model.try)
-  caption             the latest real event, typed out
-  nodes               your AIs: colour = cost class, arc = budget spent, clock = resting, hollow = forbidden by DATA setting
+  coil spin / charge   how hard it is working: idle ticks over, working spins up and chases light round the coils, STOP spins it down
+  core colour          the state: reactor blue, working bright blue, needs-you orange, verified gold-white, failed red
+  PLAN ring (outer)    planning (a comet circles it) -> ready (lit) -> rejected (red)
+  ACT ring (middle)    one arc per REAL step, coloured by that step's state; the running step has a comet
+  VERIFY ring (inner)  one arc per REAL check (green pass, red fail); when the goal verifies it SEALS into a closed green ring
+  core flare / ripple  every real event flares the core and sends a ring outward; VERIFIED sends a big gold shockwave
+  voice ring           a radial equaliser of the REAL audio: yours while it listens, its own while it speaks
+  links                a call to that provider is in flight RIGHT NOW (View.active_provider, from model.try)
+  caption              the latest real event, typed out
+  nodes                your AIs: colour = cost class, arc = budget spent, clock = resting, dashed = forbidden by DATA setting
 Decoration is allowed; fake data is not: nothing here shows a number that is not measured.
 """
 import math
@@ -17,12 +18,11 @@ import os
 import time
 
 from PySide6.QtCore import QPointF, QRectF, QTimer, Qt
-from PySide6.QtGui import (QColor, QFont, QFontMetricsF, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap,
-                           QPolygonF, QRadialGradient)
+from PySide6.QtGui import (QColor, QConicalGradient, QFont, QFontMetricsF, QImage, QLinearGradient, QPainter, QPainterPath, QPen,
+                           QPixmap, QPolygonF, QRadialGradient)
 from PySide6.QtWidgets import QToolTip, QWidget
 
-from . import hologram as H
-from . import particles as P
+from . import reactor as RX
 from .theme import C, COST_COLOR, COST_NAME, PRIVACY_NAME, fonts, qc
 
 
@@ -50,16 +50,18 @@ LEVEL_COLOR = {"info": "accent", "ok": "ok", "warn": "warn", "bad": "bad", "mute
 MODE_COLOR = {"idle": "accent", "starting": "muted", "working": "accent", "waiting": "warn", "ok": "ok", "bad": "bad",
               "stopping": "warn", "stopped": "warn"}
 # how a ring segment looks for each step / check state: (colour, alpha, width)
-SEG = {"idle": ((110, 140, 190), 60, 1.3), "pending": ((120, 150, 205), 95, 1.5), "running": ((63, 215, 255), 255, 2.6),
-       "waiting": ((255, 184, 74), 255, 2.6), "ran": ((150, 225, 255), 225, 2.3), "verified": ((61, 227, 161), 255, 2.6),
-       "denied": ((255, 93, 115), 255, 2.6), "failed": ((255, 93, 115), 255, 2.6), "rolled back": ((255, 184, 74), 150, 2.0)}
+SEG = {"idle": ((120, 135, 152), 70, 1.4), "pending": ((140, 155, 172), 120, 1.8), "running": ((110, 214, 255), 245, 3.0),
+       "waiting": ((255, 159, 67), 255, 3.2), "ran": ((150, 200, 225), 175, 2.6), "verified": ((61, 227, 161), 235, 3.0),
+       "denied": ((255, 74, 61), 255, 3.2), "failed": ((255, 74, 61), 255, 3.2), "rolled back": ((255, 159, 67), 170, 2.4)}
 REDUCED = bool(os.environ.get("PRAXIS_REDUCE_MOTION"))
 RING_NAMES = ("PLAN", "ACT", "VERIFY")
+RING_KEYS = ("plan", "act", "verify")
 VOICE_BARS = 96
 VOICE_TAG = {"listening": "LISTENING", "hearing": "HEARING", "thinking": "THINKING",
-             "speaking": "SPEAKING", "muted": "MIC OFF  \u00b7  F4", "offline": "NO MICROPHONE"}
+             "speaking": "SPEAKING", "muted": "MIC OFF  ·  F4", "offline": "NO MICROPHONE"}
 VOICE_COLOR = {"listening": "accent", "hearing": "accent", "thinking": "violet", "speaking": "ok", "muted": "warn", "offline": "bad"}
-RING_HALF, RING_HEIGHT = P.ring_extent()
+EXTENT = RX.EXTENT
+GOLD, GOLD_B, STEEL = RX.GOLD, RX.GOLD_BRIGHT, RX.STEEL
 
 
 class CoreView(QWidget):
@@ -74,36 +76,42 @@ class CoreView(QWidget):
         self.nodes, self.active, self._hit, self._hover = [], "", [], ""
         self.pipeline = dict(plan="none", steps=[], checks=[], sealed=False)
         self.t = 0.0
-        self.quality = P.Quality()
-        self.field = P.Nebula(P.LEVELS[0] if not REDUCED else P.LEVELS[2])
-        self.field.dyn.set_mode("starting")
+        self.quality = RX.Quality()
+        self.reactor = RX.Reactor(RX.LEVELS[0] if not REDUCED else RX.LEVELS[2])
+        self.reactor.dyn.set_mode("starting")
         self.ripples = []             # (t_start, colour_key)
         self._last_ripple = -1.0
         self.caption, self.cap_level, self.cap_t = "", "info", 0.0
         self.footer = ""
-        self._sprites, self._aura_cache, self._buf = {}, {}, None
-        self._fonts = {}
+        self._buf, self._fonts, self._glow_cache, self._bg = None, {}, {}, None
         self.voice = dict(state="off", level=0.0, speak=0.0, attentive=False)
         self._vhist, self._vacc = [0.0] * VOICE_BARS, 0.0
-        self.stars = [(((i * 0.6180339887) % 1.0), ((i * 0.7548776662 + 0.31) % 1.0), 0.4 + 0.6 * ((i * 0.5698402909) % 1.0),
-                       (i * 1.7) % 6.28) for i in range(110)]
+        self._poke = 0.0
         self._last = time.perf_counter()
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick)
         self.timer.start(80 if REDUCED else 33)
 
-    # ---- the API the pages use ---------------------------------------------------------------------------------
+    def dispose(self):
+        """Stop animating and drop the timer's reference to this widget (call from the main thread before it is deleted)."""
+        self.timer.stop()
+        try:
+            self.timer.timeout.disconnect()
+        except (TypeError, RuntimeError):
+            pass
+
+    # ---- the API the window uses ---------------------------------------------------------------------------------
     def set_state(self, mode, progress, title, subtitle=""):
         if mode != self.mode:
             if mode == "starting":
-                self.field.restart_assembly()
+                self.reactor.restart_power_up()
             elif mode == "ok":
-                self.field.trigger_shock()
-                self.field.pulse(1.4)
+                self.reactor.trigger_shock()
+                self.reactor.pulse(1.4)
                 self._ripple("ok", force=True)
             elif mode in ("bad", "stopping"):
                 self._ripple("bad" if mode == "bad" else "warn", force=True)
-            self.field.dyn.set_mode(mode)
+            self.reactor.dyn.set_mode(mode)
             # calm states do not need 30 fps; saves CPU while you are just reading
             self.timer.setInterval(80 if REDUCED else 33 if mode in ("working", "starting", "stopping", "ok") else 42)
         self.mode, self.progress, self.title, self.subtitle = mode, fin(progress, 0.0, 1.0), str(title), str(subtitle)
@@ -151,9 +159,9 @@ class CoreView(QWidget):
         self.footer = text
 
     def pulse(self, level="info"):
-        """A real event happened: flare the seed and send a ripple through the galaxy (rate limited so a burst stays readable)."""
+        """A real event happened: flare the core and send a ripple outward (rate limited so a burst stays readable)."""
         if self.t - self._last_ripple >= 0.14:
-            self.field.pulse(0.8)
+            self.reactor.pulse(0.8)
         self._ripple(level)
 
     def _ripple(self, level, force=False):
@@ -195,14 +203,15 @@ class CoreView(QWidget):
         if dt <= 0.0:
             return
         self.t = (self.t + dt) % 100000.0
-        self.field.advance(dt * (0.2 if REDUCED else 1.0))
+        self.reactor.advance(dt * (0.2 if REDUCED else 1.0))
         self.cap_t += dt
+        self._poke = max(0.0, self._poke - dt * 2.0)
         self._vacc += dt
         while self._vacc >= 1 / 30:                       # the voice ring is a short history of the real audio level
             self._vacc -= 1 / 30
             self._vhist = self._vhist[1:] + [self._vhist[-1] * 0.55 + self.voice_amplitude() * 0.45]
         if self.voice["state"] == "speaking":
-            self.field.flare = max(self.field.flare, 0.5 * min(1.0, self.voice["speak"]))     # the seed pulses with her voice
+            self.reactor.flare = max(self.reactor.flare, 0.5 * min(1.0, self.voice["speak"]))     # the core pulses with its voice
         self.ripples = [r for r in self.ripples if self.t - r[0] < 1.6]
 
     def _tick(self):
@@ -215,12 +224,12 @@ class CoreView(QWidget):
     # ---- geometry ----------------------------------------------------------------------------------------------------
     def _geo(self):
         w, h = self.width(), self.height()
-        top, bot = 80.0, 58.0
+        top, bot = 84.0, 58.0
         avail = max(60.0, h - top - bot)
         cx, cy = w / 2.0, top + avail / 2.0
-        R = max(24.0, min(avail * 0.5 / RING_HEIGHT, w * 0.5 / (RING_HALF * 1.6)))     # the widest ring must fit the room it has
+        R = max(24.0, min(avail * 0.5 / (EXTENT * 1.04), w * 0.5 / (EXTENT * 1.55)))     # the whole dial must fit the room it has
         nr = max(9.0, min(14.0, avail * 0.05))
-        cx += 3.0 * math.sin(self.t * 0.37); cy += 2.5 * math.sin(self.t * 0.51 + 1.3)      # it hovers
+        cy += 1.5 * math.sin(self.t * 0.51 + 1.3)                                          # it hovers, a little
         order = list(range(len(self.nodes)))
         left = [i for i in order if self.nodes[i]["cost_class"] <= 1]
         right = [i for i in order if self.nodes[i]["cost_class"] >= 2]
@@ -234,7 +243,7 @@ class CoreView(QWidget):
             for j, i in enumerate(arr):
                 dy = (j - (k - 1) / 2.0) * step
                 u = dy / ((avail + 30.0) / 2.0)
-                xoff = R * RING_HALF * 1.04 + nr + 26.0 + min(w * 0.05, 48.0) * (1.0 - u * u)
+                xoff = R * EXTENT * 1.06 + nr + 26.0 + min(w * 0.05, 48.0) * (1.0 - u * u)
                 x = cx + side * xoff
                 if w > 300:
                     x = max(124.0, min(w - 124.0, x))
@@ -242,9 +251,6 @@ class CoreView(QWidget):
         return dict(w=w, h=h, cx=cx, cy=cy, R=R, nr=nr, top=top, bot=bot, avail=avail, pos=pos)
 
     def mouseMoveEvent(self, e):
-        g = self._geo()
-        self.field.tilt_target = [max(-0.35, min(0.35, (e.position().y() - g["cy"]) / max(g["h"], 1) * 0.8)),
-                                  max(-0.5, min(0.5, (e.position().x() - g["cx"]) / max(g["w"], 1) * 1.0))]
         self._hover = ""
         for name, pt, r, tip in self._hit:
             if (e.position() - pt).manhattanLength() < r * 1.6:
@@ -255,12 +261,10 @@ class CoreView(QWidget):
 
     def mousePressEvent(self, e):
         g = self._geo()
-        if math.hypot(e.position().x() - g["cx"], e.position().y() - g["cy"]) < g["R"] * 1.3:
-            self.field.pulse(1.2)
+        if math.hypot(e.position().x() - g["cx"], e.position().y() - g["cy"]) < g["R"] * 1.2:
+            self.reactor.pulse(1.2)
+            self._poke = 1.0
             self._ripple("info", force=True)          # poke it: it answers
-
-    def leaveEvent(self, e):
-        self.field.tilt_target = [0.0, 0.0]
 
     @staticmethod
     def _tip(nd):
@@ -295,25 +299,6 @@ class CoreView(QWidget):
             self._fonts[key] = f
         return f
 
-    def _glow(self, hue, size):
-        key = (hue, int(size))
-        pm = self._sprites.get(key)
-        if pm is None:
-            s = int(size)
-            pm = QPixmap(s, s)
-            pm.fill(Qt.transparent)
-            q = QPainter(pm)
-            q.setRenderHint(QPainter.Antialiasing)
-            g = QRadialGradient(s / 2.0, s / 2.0, s / 2.0)
-            c = P.SPARKLE[hue % 3]
-            g.setColorAt(0.0, QColor(255, 255, 255, 255)); g.setColorAt(0.18, rgb(c, 235)); g.setColorAt(0.5, rgb(c, 70)); g.setColorAt(1.0, rgb(c, 0))
-            q.setPen(Qt.NoPen); q.setBrush(g); q.drawEllipse(QPointF(s / 2.0, s / 2.0), s / 2.0, s / 2.0)
-            q.setPen(QPen(QColor(255, 255, 255, 90), 1)); q.drawLine(QPointF(s * 0.18, s / 2.0), QPointF(s * 0.82, s / 2.0))
-            q.drawLine(QPointF(s / 2.0, s * 0.18), QPointF(s / 2.0, s * 0.82))
-            q.end()
-            self._sprites[key] = pm
-        return pm
-
     def paintEvent(self, e):
         t0 = time.perf_counter()
         w, h = self.width(), self.height()
@@ -324,361 +309,344 @@ class CoreView(QWidget):
             p.setRenderHint(QPainter.Antialiasing)
             p.setRenderHint(QPainter.SmoothPixmapTransform)
             g = self._geo()
-            tint, mixv = self.field.tint_colour()
-            base = QLinearGradient(0, 0, 0, h)                       # its own deep-space base: additive glow must blend onto dark,
-            base.setColorAt(0.0, QColor(6, 16, 27)); base.setColorAt(1.0, QColor(4, 7, 13))   # whatever widget it is placed in
-            p.fillRect(self.rect(), base)
-            self._stars(p, g)
+            tint, mixv = self.reactor.tint_colour()
+            self._background(p, g)
             self._aura(p, g, tint, mixv)
-            self._orbit_and_links(p, g)
-            self._projector(p, g, tint)
+            self._scale(p, g)
+            self._links(p, g)
+            self._housing(p, g, tint, mixv)
             # everything that glows goes into one buffer, which is then bloomed
             if self._buf is None or self._buf.size() != self.size():
                 self._buf = QImage(self.size(), QImage.Format_ARGB32_Premultiplied)
             buf = self._buf
             buf.fill(Qt.transparent)
             q = QPainter(buf)
-            q.setRenderHint(QPainter.Antialiasing)
-            q.setRenderHint(QPainter.SmoothPixmapTransform)
-            q.setCompositionMode(QPainter.CompositionMode_Plus)
-            self._galaxy(q, g, tint, mixv)
-            self._streams(q, g)
-            self._ripples(q, g)
-            q.end()
+            try:
+                q.setRenderHint(QPainter.Antialiasing)
+                q.setCompositionMode(QPainter.CompositionMode_Plus)
+                self._rings(q, g, tint)
+                self._voice_ring(q, g)
+                self._coils_lit(q, g, tint, mixv)
+                self._core(q, g, tint, mixv)
+                self._ripples(q, g)
+                self._streams(q, g)
+                self._embers(q, g)
+            finally:
+                q.end()
             p.setCompositionMode(QPainter.CompositionMode_Plus)
-            flick = 1.0 if REDUCED else H.flicker(self.t)
-            p.setOpacity(flick)
             p.drawImage(0, 0, buf)
-            if not REDUCED and self.quality.level < 2:                # the ghost: a faint second image, as light in air has
-                gx, gy = H.ghost_offset(self.t)
-                p.setOpacity(0.16 * flick); p.drawImage(QPointF(gx, gy), buf)
-            gl = (False, 0.0, 0.0) if REDUCED else H.glitch(self.t)
-            if gl[0]:                                                 # a rare horizontal tear: one band shifted sideways
-                y0 = int(gl[1] * h); band = max(6, h // 28)
-                p.setOpacity(0.8); p.drawImage(QPointF(gl[2], y0), buf, QRectF(0, y0, w, band))
-            p.setOpacity(flick)
             if self.quality.level < 2:                                # bloom: two blurred copies added back on top
                 small = buf.scaled(max(8, w // 4), max(8, h // 4), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
-                p.setOpacity(0.9); p.drawImage(QRectF(0, 0, w, h), small)
+                p.setOpacity(0.55); p.drawImage(QRectF(0, 0, w, h), small)
                 tiny = small.scaled(max(4, w // 14), max(4, h // 14), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
-                p.setOpacity(0.75); p.drawImage(QRectF(0, 0, w, h), tiny)
+                p.setOpacity(0.42); p.drawImage(QRectF(0, 0, w, h), tiny)
             p.setOpacity(1.0)
-            self._sweep(p, g, tint)
             p.setCompositionMode(QPainter.CompositionMode_SourceOver)
-            p.drawPixmap(0, 0, self._overlay(w, h))
             self._nodes(p, g)
             self._hud(p, g)
         finally:
             if p.isActive():
                 p.end()      # a bug while painting must never leave a painter open: that is a hard crash, not an error
         if self.quality.record((time.perf_counter() - t0) * 1000.0):
-            self.field.resize(self.quality.n)
+            self.reactor.resize(self.quality.n)
 
-    def _projector(self, p, g, tint):
-        """The emitter the hologram stands on: a perspective grid, a glowing ring, and a faint beam rising from it."""
-        w, h, cx = g["w"], g["h"], g["cx"]
-        rx = max(60.0, min(w * 0.30, g["R"] * RING_HALF * 1.05))
-        ry = rx * 0.17
-        cy = min(h - 46.0 - ry, g["cy"] + g["R"] * RING_HEIGHT + ry * 1.2)
-        col = rgb(tint)
-        p.save()
-        p.setCompositionMode(QPainter.CompositionMode_Plus)
-        p.setPen(Qt.NoPen)
-        rings, spokes = H.grid_lines(3, 18, 0.0 if REDUCED else self.t)
-        for f in rings:
-            a = int(46 * H.ring_alpha(f))
-            if a <= 0:
-                continue
-            c = QColor(col); c.setAlpha(a)
-            p.setPen(QPen(c, 1.0)); p.setBrush(Qt.NoBrush)
-            p.drawEllipse(QPointF(cx, cy), rx * f, ry * f)
-        c = QColor(col); c.setAlpha(80)
-        p.setPen(QPen(c, 1.6)); p.drawEllipse(QPointF(cx, cy), rx * 0.98, ry * 0.98)       # the emitter's lip
-        p.restore()
-
-    def _sweep(self, p, g, tint):
-        """A thin bright line that rises through the projection every few seconds."""
-        if REDUCED:
-            return
-        f, strength = H.sweep(self.t)
-        y = g["top"] + (g["h"] - g["top"] - g["bot"]) * f
-        col = rgb(tint); col.setAlpha(int(12 * strength))
-        grad = QLinearGradient(0, y - 14, 0, y + 14)
-        z = QColor(col); z.setAlpha(0)
-        grad.setColorAt(0.0, z); grad.setColorAt(0.5, col); grad.setColorAt(1.0, z)
-        p.setCompositionMode(QPainter.CompositionMode_Plus)
-        p.fillRect(QRectF(0, y - 14, g["w"], 28), grad)
-
-    def _overlay(self, w, h):
-        """Faint horizontal scanlines and a dark vignette: the holographic-display finish. Built once per size."""
-        pm = getattr(self, "_ov", None)
-        if pm is None or pm.size().width() != w or pm.size().height() != h:
+    # -- background: gunmetal with a faint hex-plate pattern, never a stage set --
+    def _background(self, p, g):
+        w, h = g["w"], g["h"]
+        pm = self._bg
+        if pm is None or pm.width() != w or pm.height() != h:
             pm = QPixmap(w, h)
-            pm.fill(Qt.transparent)
             q = QPainter(pm)
-            q.setPen(QPen(QColor(120, 170, 255, 5), 1))
-            for y in range(0, h, 3):
-                q.drawLine(0, y, w, y)
-            vg = QRadialGradient(w / 2.0, h / 2.0, max(w, h) * 0.62)
-            vg.setColorAt(0.0, QColor(0, 0, 0, 0)); vg.setColorAt(0.65, QColor(0, 0, 0, 0)); vg.setColorAt(1.0, QColor(0, 0, 0, 120))
+            q.setRenderHint(QPainter.Antialiasing)
+            base = QLinearGradient(0, 0, 0, h)
+            base.setColorAt(0.0, QColor(13, 17, 23)); base.setColorAt(0.55, QColor(9, 12, 17)); base.setColorAt(1.0, QColor(5, 7, 10))
+            q.fillRect(QRectF(0, 0, w, h), base)
+            s = 34.0                                              # hexagon edge length: a fine armour-plate texture
+            q.setPen(QPen(QColor(120, 135, 152, 16), 1))
+            dx, dy = s * 1.5, s * math.sqrt(3) / 2
+            cols, rows = int(w / dx) + 2, int(h / dy) + 2
+            for ci in range(cols):
+                for ri in range(rows):
+                    x = ci * dx
+                    y = ri * dy * 2 + (dy if ci % 2 else 0)
+                    pts = [QPointF(x + math.cos(math.radians(60 * k)) * s, y + math.sin(math.radians(60 * k)) * s) for k in range(6)]
+                    q.drawPolyline(QPolygonF(pts[:4]))
+            vg = QRadialGradient(w / 2.0, h / 2.0, max(w, h) * 0.65)
+            vg.setColorAt(0.0, QColor(0, 0, 0, 0)); vg.setColorAt(0.6, QColor(0, 0, 0, 40)); vg.setColorAt(1.0, QColor(0, 0, 0, 170))
             q.setPen(Qt.NoPen); q.setBrush(vg); q.drawRect(0, 0, w, h)
             q.end()
-            self._ov = pm
-        return pm
+            self._bg = pm
+        p.drawPixmap(0, 0, pm)
 
-    def _stars(self, p, g):
-        w, h = g["w"], g["h"]
-        tx, ty = self.field.tilt[1] * 22, self.field.tilt[0] * 14
-        p.setPen(Qt.NoPen)
-        p.setCompositionMode(QPainter.CompositionMode_Plus)
-        for sx, sy, z, ph in self.stars:
-            a = (0.35 + 0.65 * (0.5 + 0.5 * math.sin(self.t * (0.6 + z) + ph))) * 90 * z
-            p.setBrush(QColor(190, 205, 255, int(a)))
-            r = 0.6 + 1.1 * z
-            p.drawEllipse(QPointF(((sx * w + tx * z * 2.0) % w), ((sy * h + ty * z * 2.0) % h)), r, r)
-
-    def _aura_pixmap(self, R, tint, mixv):
-        """The two-lobed glow (blue above, pink below), rendered ONCE per colour state at half resolution: painting huge
-        gradients every frame was most of the frame time."""
-        key = (int(R // 4), tuple(int(c // 16) for c in tint), int(mixv * 10))
-        pm = self._aura_cache.get(key)
+    def _aura(self, p, g, tint, mixv):
+        """A soft glow behind the reactor in the state's colour (cached per colour state)."""
+        R = g["R"]
+        key = (int(R // 6), tuple(int(c // 24) for c in tint), int(mixv * 10))
+        pm = self._glow_cache.get(key)
         if pm is None:
-            side = int(R * 3.1)
+            side = int(R * 4.6)
             pm = QPixmap(side, side)
             pm.fill(Qt.transparent)
             q = QPainter(pm)
             q.setRenderHint(QPainter.Antialiasing)
-            q.setCompositionMode(QPainter.CompositionMode_Plus)
-            q.scale(0.5, 0.5)
-            c0 = R * 3.1
-            top, bot = P.mix(P.palette_at(0.0), tint, mixv), P.mix(P.palette_at(1.0), tint, mixv)
-            q.setPen(Qt.NoPen)
-            for oy, col, a in ((-R * 0.45, top, 60), (R * 0.45, bot, 56)):
-                rad = R * 2.8
-                gr = QRadialGradient(c0, c0 + oy, rad)
-                gr.setColorAt(0.0, rgb(col, a)); gr.setColorAt(0.55, rgb(col, a * 0.28)); gr.setColorAt(1.0, rgb(col, 0))
-                q.setBrush(gr); q.drawEllipse(QPointF(c0, c0 + oy), rad, rad)
+            col = RX.mix(RX.BLUE, tint, mixv)
+            gr = QRadialGradient(side / 2.0, side / 2.0, side / 2.0)
+            gr.setColorAt(0.0, rgb(col, 70)); gr.setColorAt(0.35, rgb(col, 26)); gr.setColorAt(1.0, rgb(col, 0))
+            q.setPen(Qt.NoPen); q.setBrush(gr); q.drawEllipse(QPointF(side / 2.0, side / 2.0), side / 2.0, side / 2.0)
             q.end()
-            if len(self._aura_cache) > 12:
-                self._aura_cache.pop(next(iter(self._aura_cache)))
-            self._aura_cache[key] = pm
-        return pm
-
-    def _aura(self, p, g, tint, mixv):
-        cx, cy, R = g["cx"], g["cy"], g["R"]
-        pm = self._aura_pixmap(R, tint, mixv)
+            if len(self._glow_cache) > 12:
+                self._glow_cache.pop(next(iter(self._glow_cache)))
+            self._glow_cache[key] = pm
         p.setCompositionMode(QPainter.CompositionMode_Plus)
-        breathe = 0.5 + 0.5 * math.sin(self.t * 1.3)
-        p.setOpacity(min(1.0, (0.82 + 0.18 * breathe) * self.field.dyn.v["bright"]))
-        half = R * 3.1
-        p.drawPixmap(QRectF(cx - half, cy - half, 2 * half, 2 * half), pm, QRectF(pm.rect()))
+        half = R * 2.3
+        p.setOpacity(min(1.0, self.reactor.dyn.v["bright"] * (0.55 + 0.45 * min(1.2, self.reactor.core_level()))))
+        p.drawPixmap(QRectF(g["cx"] - half, g["cy"] - half, 2 * half, 2 * half), pm, QRectF(pm.rect()))
         p.setOpacity(1.0)
+        p.setCompositionMode(QPainter.CompositionMode_SourceOver)
 
-    def _link_curve(self, g, i):
+    # -- the outer gauge scale and the targeting brackets --
+    def _scale(self, p, g):
+        cx, cy, R = g["cx"], g["cy"], g["R"]
+        rot = self.reactor.tick_rot
+        r0 = RX.SCALE_R[0] * R
+        for ang, kind in RX.ticks(rot):
+            ln = (0.10, 0.065, 0.032)[2 - kind] * R
+            col = GOLD_B if kind == 2 else STEEL if kind == 1 else (80, 92, 106)
+            p.setPen(QPen(rgb(col, 235 if kind == 2 else 150 if kind == 1 else 90), 1.6 if kind == 2 else 1.0))
+            ca, sa = math.cos(ang), math.sin(ang)
+            p.drawLine(QPointF(cx + ca * r0, cy + sa * r0), QPointF(cx + ca * (r0 + ln), cy + sa * (r0 + ln)))
+        p.setPen(QPen(rgb(STEEL, 70), 1.0)); p.setBrush(Qt.NoBrush)
+        p.drawEllipse(QPointF(cx, cy), r0 - 2, r0 - 2)
+        p.setFont(self._font(self.mono, 7, None, 1))
+        p.setPen(rgb(GOLD, 170))
+        for k, label in enumerate(("000", "090", "180", "270")):          # bearing numerals at the cardinal points, upright
+            a = rot + k * math.pi / 2 - math.pi / 2
+            x, y = cx + math.cos(a) * (r0 - 14), cy + math.sin(a) * (r0 - 14)
+            p.drawText(QRectF(x - 14, y - 6, 28, 12), Qt.AlignCenter, label)
+        p.setBrush(rgb(GOLD_B, 235)); p.setPen(Qt.NoPen)                    # the fixed index at the top
+        top = cy - (RX.SCALE_R[1] + 0.07) * R
+        p.drawPolygon(QPolygonF([QPointF(cx, top + 9), QPointF(cx - 5, top), QPointF(cx + 5, top)]))
+        hearing = self.voice["state"] in ("hearing", "speaking")           # targeting brackets: they close in while it listens
+        rb = (RX.SCALE_R[1] + (0.04 if hearing else 0.13) + 0.04 * math.sin(self.t * 2.0)) * R
+        p.setBrush(Qt.NoBrush)
+        p.setPen(QPen(rgb(GOLD, 230 if hearing else 120), 2.0 if hearing else 1.4, Qt.SolidLine, Qt.FlatCap))
+        box = QRectF(cx - rb, cy - rb, 2 * rb, 2 * rb)
+        for k in range(4):
+            mid = 45 + 90 * k
+            p.drawArc(box, int((mid - 7) * 16), int(14 * 16))
+
+    # -- links to the AIs --
+    def _link_pts(self, g, i):
         pt, side = g["pos"][i]
         cx, cy, R = g["cx"], g["cy"], g["R"]
-        vx, vy = pt.x() - cx, pt.y() - cy
-        vl = math.hypot(vx, vy) or 1.0
-        p0 = (cx + vx / vl * R * 1.22, cy + vy / vl * R * 1.22 * 0.8)
-        p2 = (pt.x() - side * g["nr"] * 1.2, pt.y())
-        mx, my = (p0[0] + p2[0]) / 2.0, (p0[1] + p2[1]) / 2.0
-        nxv, nyv = -vy / vl, vx / vl
-        p1 = (mx + nxv * vl * 0.12, my + nyv * vl * 0.12 - 8)
-        return p0, p1, p2
+        ang = math.atan2(pt.y() - cy, pt.x() - cx)
+        p0 = (cx + math.cos(ang) * R * (RX.SCALE_R[1] + 0.2), cy + math.sin(ang) * R * (RX.SCALE_R[1] + 0.2))
+        p2 = (pt.x() - side * g["nr"] * 1.3, pt.y())
+        elbow = (p2[0] - side * min(48.0, abs(p2[0] - p0[0]) * 0.5), p2[1])
+        return [p0, elbow, p2]
 
     def _is_active(self, nd):
         return bool(self.active) and nd["family"] == self.active.split("/")[0]
 
-    def _orbit_and_links(self, p, g):
+    def _links(self, p, g):
         p.setCompositionMode(QPainter.CompositionMode_SourceOver)
         self._hit = []
         for i, nd in enumerate(self.nodes):
             if i not in g["pos"]:
                 continue
             active = self._is_active(nd)
-            base = COST_COLOR.get(nd["cost_class"], "accent")
             dim = nd["blocked"] or nd["cooling_s"] > 0
-            p0, p1, p2 = self._link_curve(g, i)
-            path = QPainterPath(QPointF(*p0))
-            path.quadTo(QPointF(*p1), QPointF(*p2))
-            pen = QPen(qc(base, 235 if active else (26 if dim else 58)), 2.0 if active else 1.0)
+            base = COST_COLOR.get(nd["cost_class"], "accent")
+            pts = self._link_pts(g, i)
+            path = QPainterPath(QPointF(*pts[0]))
+            path.lineTo(QPointF(*pts[1])); path.lineTo(QPointF(*pts[2]))
+            pen = QPen(qc(base, 235 if active else (24 if dim else 52)), 2.0 if active else 1.0)
             if nd["blocked"]:
                 pen.setStyle(Qt.DashLine)
             p.setPen(pen); p.setBrush(Qt.NoBrush)
             p.drawPath(path)
 
-    def _streams(self, q, g):
-        """Particles carrying a request from the galaxy to the provider being called right now (drawn into the bloom buffer)."""
-        for i, nd in enumerate(self.nodes):
-            if i not in g["pos"] or not self._is_active(nd):
-                continue
-            base = QColor(C[COST_COLOR.get(nd["cost_class"], "accent")])
-            p0, p1, p2 = self._link_curve(g, i)
-            q.setPen(Qt.NoPen)
-            for x, y, a, s, u in P.courier(self.t, p0, p1, p2):
-                q.setBrush(QColor(base.red(), base.green(), base.blue(), int(235 * a)))
-                q.drawEllipse(QPointF(x, y), s, s)
-                q.setBrush(QColor(255, 255, 255, int(150 * a)))
-                q.drawEllipse(QPointF(x, y), s * 0.45, s * 0.45)
-
-    # ---- the galaxy, the rings, the seed ---------------------------------------------------------------------------------
-    def _galaxy(self, q, g, tint, mixv):
+    # -- the housing: brushed gunmetal with a gold bevel, and the coil bodies --
+    def _housing(self, p, g, tint, mixv):
         cx, cy, R = g["cx"], g["cy"], g["R"]
-        f = self.field
-        bright = f.dyn.v["bright"]
-        sz = max(0.75, min(1.35, R / 105.0))
-        buckets, sparks = f.project(cx, cy, R, QPointF)
-        cols = [P.mix(P.bucket_colour(b), tint, mixv * (0.35 if b == P.BUCKETS else 1.0)) for b in range(P.NB)]
-        widths = (1.15 * sz, 1.65 * sz, 2.25 * sz)
-        alphas = (85, 150, 235)
-        lum_gain = (0.45, 0.95, 1.35)             # faded / ordinary / on the arm's centre
+        p.setCompositionMode(QPainter.CompositionMode_SourceOver)
+        ring = QPainterPath()
+        ring.addEllipse(QPointF(cx, cy), RX.HOUSING_OUT * R, RX.HOUSING_OUT * R)
+        ring.addEllipse(QPointF(cx, cy), RX.HOUSING_IN * R, RX.HOUSING_IN * R)
+        cg = QConicalGradient(cx, cy, 35)
+        for stop, shade in ((0.0, 70), (0.12, 150), (0.25, 62), (0.4, 128), (0.55, 52), (0.7, 142), (0.85, 60), (1.0, 70)):
+            cg.setColorAt(stop, QColor(shade, shade + 6, shade + 14))
+        p.setPen(Qt.NoPen); p.setBrush(cg); p.drawPath(ring)
+        p.setBrush(Qt.NoBrush)
+        p.setPen(QPen(rgb(GOLD, 230), 2.2)); p.drawEllipse(QPointF(cx, cy), RX.HOUSING_OUT * R, RX.HOUSING_OUT * R)      # the gold bevel
+        p.setPen(QPen(rgb(GOLD, 70), 1.0)); p.drawEllipse(QPointF(cx, cy), RX.HOUSING_IN * R, RX.HOUSING_IN * R)
+        p.setPen(Qt.NoPen); p.setBrush(QColor(20, 24, 30))
+        for k in range(10):                                                                                           # bolts
+            a = math.tau * k / 10 + 0.3
+            p.drawEllipse(QPointF(cx + math.cos(a) * 0.92 * R, cy + math.sin(a) * 0.92 * R), R * 0.018, R * 0.018)
+        # the well the coils sit in, and the coil bodies: dark bronze until they are charged
+        well = QRadialGradient(cx, cy, RX.COIL_OUT * R)
+        well.setColorAt(0.0, QColor(6, 9, 13)); well.setColorAt(0.6, QColor(10, 14, 20)); well.setColorAt(1.0, QColor(24, 28, 34))
+        p.setBrush(well); p.drawEllipse(QPointF(cx, cy), RX.COIL_OUT * R * 1.02, RX.COIL_OUT * R * 1.02)
+        col = RX.mix(RX.BLUE, tint, 0.35 + 0.65 * mixv)
+        for i, poly in enumerate(RX.coil_polys(cx, cy, R, self.reactor.coil_rot)):
+            mx = sum(x for x, y in poly) / 4.0; my = sum(y for x, y in poly) / 4.0
+            gr = QLinearGradient(cx, cy, mx, my)
+            gr.setColorAt(0.0, QColor(44, 29, 12)); gr.setColorAt(1.0, QColor(112, 76, 30))
+            qp = QPolygonF([QPointF(x, y) for x, y in poly])
+            p.setBrush(gr); p.setPen(QPen(rgb(GOLD, 120), 1.0))
+            p.drawPolygon(qp)
+            c = self.reactor.coil_charge(i)                                       # charged: the coil is lit in the state's colour
+            if c > 0.01:
+                lg = QLinearGradient(cx, cy, mx, my)
+                lg.setColorAt(0.0, rgb(RX.mix(col, RX.WHITE, 0.35), 235 * c)); lg.setColorAt(1.0, rgb(col, 200 * c))
+                p.setBrush(lg); p.setPen(Qt.NoPen); p.drawPolygon(qp)
 
-        def layer(depth):
-            for b in range(P.NB):
-                for v in range(P.VARIANTS):
-                    pts = buckets[(b * 3 + depth) * P.VARIANTS + v]
-                    if pts:
-                        pen = QPen(rgb(cols[b], alphas[depth] * bright * lum_gain[v]), widths[depth] * (0.85 + 0.15 * v))
-                        pen.setCapStyle(Qt.RoundCap)
-                        q.setPen(pen)
-                        q.drawPoints(QPolygonF(pts))
-
-        rings = [f.ring(k, cx, cy, R) for k in range(3)]
-        layer(0)
-        for k in range(3):
-            self._draw_ring(q, g, k, rings[k], back=True, tint=tint)
-        layer(1)
-        self._seed(q, g, tint, mixv)
-        self._voice_ring(q, g, tint)
-        layer(2)
-        for x, y, z, i in sparks:                  # warm gold / white / ice sparks that twinkle
-            a = f.sparkle_alpha(i)
-            s = (9 + 13 * a) * sz * (0.8 + 0.4 * z)
-            q.setOpacity(min(1.0, 0.1 + 0.8 * a) * (0.4 + 0.6 * z))
-            q.drawPixmap(QRectF(x - s / 2, y - s / 2, s, s), self._glow(f.shue[i], 40), QRectF(0, 0, 40, 40))
-        q.setOpacity(1.0)
+    def _coils_lit(self, q, g, tint, mixv):
+        cx, cy, R = g["cx"], g["cy"], g["R"]
+        col = RX.mix(RX.BLUE, tint, 0.35 + 0.65 * mixv)
         q.setPen(Qt.NoPen)
-        for tail in f.comets(cx, cy, R):           # comets: a bright head and a fading trail along the arm
-            for x, y, a, s in tail:
-                if a > 0.02:
-                    q.setBrush(rgb(P.mix((255, 255, 255), tint, 0.3 + 0.5 * mixv), 215 * a * bright))
-                    q.drawEllipse(QPointF(x, y), s * sz, s * sz)
-        for k in range(3):
-            self._draw_ring(q, g, k, rings[k], back=False, tint=tint)
+        for i, poly in enumerate(RX.coil_polys(cx, cy, R, self.reactor.coil_rot)):
+            c = self.reactor.coil_charge(i)
+            if c <= 0.01:
+                continue
+            q.setBrush(rgb(col, 60 * c * self.reactor.dyn.v["bright"]))
+            q.drawPolygon(QPolygonF([QPointF(x, y) for x, y in poly]))
 
-    def _seed(self, q, g, tint, mixv):
-        """The bright heart: a glow, a lens-flare cross and an anamorphic streak that swell with every real event."""
+    def _core(self, q, g, tint, mixv):
+        """The glowing heart: palladium ring, the rotating triangle, and a core that flares with every real event."""
         cx, cy, R = g["cx"], g["cy"], g["R"]
-        fl = self.field.flare
-        col = P.mix(P.SEED_WHITE, tint, 0.45 * mixv)
-        rad = R * (0.21 + 0.20 * fl) * (0.92 + 0.08 * math.sin(self.t * 2.1))
+        lvl = self.reactor.core_level()
+        col = RX.mix(RX.BLUE, tint, mixv)
+        pal = (RX.PAL_R[0] + RX.PAL_R[1]) / 2.0 * R
+        q.setBrush(Qt.NoBrush)
+        q.setPen(QPen(rgb(RX.mix(col, RX.WHITE, 0.4), min(255, 210 * lvl)), R * (RX.PAL_R[1] - RX.PAL_R[0])))
+        q.drawEllipse(QPointF(cx, cy), pal, pal)
+        tri = RX.triangle(cx, cy, R, self.reactor.tri_rot)
+        q.setPen(QPen(rgb(RX.mix(col, RX.WHITE, 0.55), min(255, 230 * lvl)), 2.4, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        q.drawPolygon(QPolygonF([QPointF(x, y) for x, y in tri]))
+        tri2 = RX.triangle(cx, cy, R, -self.reactor.tri_rot * 1.4, RX.TRI_R * 0.55)
+        q.setPen(QPen(rgb(col, min(255, 160 * lvl)), 1.4, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        q.drawPolygon(QPolygonF([QPointF(x, y) for x, y in tri2]))
+        rad = R * RX.CORE_R * (1.0 + 0.5 * min(1.5, lvl))
         gr = QRadialGradient(cx, cy, rad)
-        gr.setColorAt(0.0, rgb((255, 255, 255), 255)); gr.setColorAt(0.10, rgb(col, 215)); gr.setColorAt(0.42, rgb(col, 55)); gr.setColorAt(1.0, rgb(col, 0))
-        q.setPen(Qt.NoPen); q.setBrush(gr)
-        q.drawEllipse(QPointF(cx, cy), rad, rad)
-        L = R * (0.55 + 1.3 * fl)                                   # anamorphic horizontal streak
-        sg = QLinearGradient(cx - L, cy, cx + L, cy)
-        sg.setColorAt(0.0, rgb(col, 0)); sg.setColorAt(0.5, rgb(col, 95 + 140 * min(1, fl))); sg.setColorAt(1.0, rgb(col, 0))
-        q.setBrush(sg)
-        q.drawRect(QRectF(cx - L, cy - 1.1, 2 * L, 2.2))
-        V = R * (0.2 + 0.4 * fl)                                  # and a short vertical flare
-        vg = QLinearGradient(cx, cy - V, cx, cy + V)
-        vg.setColorAt(0.0, rgb(col, 0)); vg.setColorAt(0.5, rgb(col, 130)); vg.setColorAt(1.0, rgb(col, 0))
-        q.setBrush(vg)
-        q.drawRect(QRectF(cx - 0.9, cy - V, 1.8, 2 * V))
+        gr.setColorAt(0.0, rgb(RX.WHITE, 255)); gr.setColorAt(0.18, rgb(RX.mix(col, RX.WHITE, 0.6), min(255, 235 * lvl)))
+        gr.setColorAt(0.5, rgb(col, min(255, 120 * lvl))); gr.setColorAt(1.0, rgb(col, 0))
+        q.setPen(Qt.NoPen); q.setBrush(gr); q.drawEllipse(QPointF(cx, cy), rad, rad)
+        fl = self.reactor.flare + 0.6 * self._poke                      # a lens-flare cross that swells with every real event
+        if fl > 0.02:
+            L = R * (0.5 + 1.1 * fl)
+            sg = QLinearGradient(cx - L, cy, cx + L, cy)
+            hot = RX.mix(col, RX.GOLD_BRIGHT, 0.5)
+            sg.setColorAt(0.0, rgb(hot, 0)); sg.setColorAt(0.5, rgb(hot, min(255, 200 * fl))); sg.setColorAt(1.0, rgb(hot, 0))
+            q.setBrush(sg); q.drawRect(QRectF(cx - L, cy - 1.2, 2 * L, 2.4))
+            V = L * 0.45
+            vg = QLinearGradient(cx, cy - V, cx, cy + V)
+            vg.setColorAt(0.0, rgb(hot, 0)); vg.setColorAt(0.5, rgb(hot, min(255, 150 * fl))); vg.setColorAt(1.0, rgb(hot, 0))
+            q.setBrush(vg); q.drawRect(QRectF(cx - 1.0, cy - V, 2.0, 2 * V))
 
-    def _voice_ring(self, q, g, tint):
-        """A circular oscilloscope of the real audio, in the galaxy's own plane: the newest sample at the top, the history
-        running clockwise. Cyan while it hears you, green while it speaks, amber when the microphone is off."""
+    def _voice_ring(self, q, g):
+        """A radial equaliser of the real audio around the housing: the newest sample at the top, the history running clockwise.
+        Blue while it hears you, green while it speaks, orange when the microphone is off."""
         st = self.voice["state"]
         if st == "off":
             return
-        key = VOICE_COLOR.get(st, "accent")
-        col = QColor(C[key])
-        base = 0.10 if st == "muted" else (0.22 if self.voice["attentive"] else 0.14)
-        f, cx, cy, R = self.field, g["cx"], g["cy"], g["R"]
+        col = QColor(C[VOICE_COLOR.get(st, "accent")])
+        base = 0.10 if st == "muted" else (0.24 if self.voice["attentive"] else 0.14)
+        cx, cy, R = g["cx"], g["cy"], g["R"]
         n = VOICE_BARS
-        for i in range(n):
+        step = max(1, n // self.quality.bars)
+        r0, span = RX.VOICE_IN * R, (RX.VOICE_OUT - RX.VOICE_IN) * R
+        for i in range(0, n, step):
             v = self._vhist[n - 1 - i]
             phi = -math.pi / 2 + math.tau * i / n
-            x0, y0, z0 = f.disc_point(0.34, phi, cx, cy, R)
-            x1, y1, z1 = f.disc_point(0.34 + 0.05 + 0.20 * v, phi, cx, cy, R)
-            a = int(255 * min(1.0, base + 0.85 * v) * (0.5 + 0.5 * (0.5 + 0.5 * z0)))
-            q.setPen(QPen(QColor(col.red(), col.green(), col.blue(), a), 1.6 + 1.4 * v))
-            q.drawLine(QPointF(x0, y0), QPointF(x1, y1))
+            ca, sa = math.cos(phi), math.sin(phi)
+            a = int(255 * min(1.0, base + 0.85 * v))
+            q.setPen(QPen(QColor(col.red(), col.green(), col.blue(), a), 1.6 + 1.2 * v, Qt.SolidLine, Qt.RoundCap))
+            q.drawLine(QPointF(cx + ca * r0, cy + sa * r0), QPointF(cx + ca * (r0 + span * (0.18 + 0.82 * v)), cy + sa * (r0 + span * (0.18 + 0.82 * v))))
 
-    def _draw_ring(self, q, g, which, pts, back, tint):
-        """One gimbal ring. Its segments are the REAL steps / checks; the front and back halves are drawn on either side of
-        the galaxy plane so the ring really weaves through it."""
-        states = self.ring_states(which)
-        segs = len(states)
-        n = len(pts)
-        groups = {}
-        for x, y, z, i in pts:
-            if (z < 0) != back:
-                continue
-            if segs == 0:
-                st = "idle"
-            else:
-                sg = P.segment_of(i, n, segs)
-                if sg is None:
-                    continue
-                st = states[sg[0]]
-            groups.setdefault(st, []).append(QPointF(x, y))
-        depth_gain = 0.55 if back else 1.0
+    # -- the three HUD rings: the real pipeline --
+    def _rings(self, q, g, tint):
+        cx, cy, R = g["cx"], g["cy"], g["R"]
         pulse = 0.65 + 0.35 * math.sin(self.t * 6.0)
-        for st, plist in groups.items():
-            colour, alpha, width = SEG.get(st, SEG["idle"])
-            a = alpha * depth_gain * (pulse if st == "waiting" else 1.0)
-            pen = QPen(rgb(P.mix(colour, tint, 0.15), a), width * (1.0 if self.pipeline["sealed"] and which == 2 else 0.92))
-            pen.setCapStyle(Qt.RoundCap)
-            q.setPen(pen)
-            q.drawPoints(QPolygonF(plist))
-        if back or segs == 0:
-            return
-        by_i = {i: (x, y, z) for x, y, z, i in pts}
-        if which == 2 and self.pipeline["sealed"]:               # sealed: a highlight keeps circling the closed green ring
-            head = int((self.t * 0.45) % 1.0 * n) % n
-            for j in range(14):
-                x, y, z = by_i[(head - j) % n]
-                if z >= 0:
-                    a = (1.0 - j / 14.0) ** 1.4
-                    q.setPen(Qt.NoPen); q.setBrush(rgb((255, 255, 255) if j == 0 else SEG["verified"][0], 235 * a))
-                    q.drawEllipse(QPointF(x, y), 3.0 * (1 - 0.5 * j / 14.0), 3.0 * (1 - 0.5 * j / 14.0))
-        if segs > 1:                                             # a bright bead at both ends of every arc: the segments read as separate
-            q.setPen(Qt.NoPen)
-            for s_i, st in enumerate(states):
-                colour, alpha, _ = SEG.get(st, SEG["idle"])
-                for end in (0.0, 1.0 - P.GAP - 0.02):
-                    i0 = int((s_i + end) * n / segs) % n
-                    x, y, z = by_i.get(i0, (0, 0, -1))
-                    if z >= 0:
-                        q.setBrush(rgb(colour, alpha * 0.9)); q.drawEllipse(QPointF(x, y), 2.3, 2.3)
-        for s, st in enumerate(states):                          # comets on running segments: the work happening right now
-            if st != "running":
+        for which in range(3):
+            r = (RX.RING_R["plan"], RX.RING_R["act"], RX.RING_R["verify"])[which]
+            rect = QRectF(cx - r * R, cy - r * R, 2 * r * R, 2 * r * R)
+            q.setBrush(Qt.NoBrush)
+            q.setPen(QPen(rgb(STEEL, 46), 1.0)); q.drawEllipse(QPointF(cx, cy), r * R, r * R)                 # the track
+            states = self.ring_states(which)
+            segs = RX.ring_segments(len(states))
+            if not segs:
                 continue
-            frac = (self.t * 0.75 + s * 0.31) % 1.0
-            head = int((s + frac * (1.0 - P.GAP)) * n / segs) % n
-            for j in range(11):
-                x, y, z = by_i[(head - j) % n]
-                if z < 0:
+            for (start, span), st in zip(segs, states):
+                colour, alpha, width = SEG.get(st, SEG["idle"])
+                a = alpha * (pulse if st == "waiting" else 1.0)
+                pen = QPen(rgb(RX.mix(colour, tint, 0.10), a), width, Qt.SolidLine, Qt.FlatCap)
+                q.setPen(pen)
+                q.drawArc(rect, int((90 - start) * 16), int(-span * 16))
+            if which == 2 and self.pipeline["sealed"]:                  # sealed: a highlight keeps circling the closed ring
+                ang = math.radians(90 - (self.t * 80.0) % 360.0)
+                for j in range(14):
+                    a2 = ang + math.radians(j * 2.2)
+                    f = (1.0 - j / 14.0) ** 1.4
+                    q.setPen(Qt.NoPen); q.setBrush(rgb((255, 255, 255) if j == 0 else SEG["verified"][0], 235 * f))
+                    q.drawEllipse(QPointF(cx + math.cos(a2) * r * R, cy - math.sin(a2) * r * R), 3.0 * (1 - 0.5 * j / 14.0), 3.0 * (1 - 0.5 * j / 14.0))
+            for s_i, (st, (start, span)) in enumerate(zip(states, segs)):
+                if st != "running":
                     continue
-                a = (1.0 - j / 11.0) ** 1.5
-                q.setPen(Qt.NoPen); q.setBrush(rgb((255, 255, 255) if j == 0 else SEG["running"][0], 230 * a))
-                q.drawEllipse(QPointF(x, y), 3.2 * (1 - 0.6 * j / 11.0), 3.2 * (1 - 0.6 * j / 11.0))
+                frac = (self.t * 0.55 + s_i * 0.31) % 1.0                   # a comet runs along the segment doing work right now
+                for j in range(12):
+                    ang = math.radians(90 - (start + (frac * span) - j * 1.6))
+                    f = (1.0 - j / 12.0) ** 1.5
+                    q.setPen(Qt.NoPen); q.setBrush(rgb((255, 255, 255) if j == 0 else SEG["running"][0], 235 * f))
+                    q.drawEllipse(QPointF(cx + math.cos(ang) * r * R, cy - math.sin(ang) * r * R), 3.4 * (1 - 0.6 * j / 12.0), 3.4 * (1 - 0.6 * j / 12.0))
+            if len(segs) > 1:                                              # end caps: the arcs read as separate pieces
+                q.setPen(Qt.NoPen)
+                for st, (start, span) in zip(states, segs):
+                    colour, alpha, _ = SEG.get(st, SEG["idle"])
+                    q.setBrush(rgb(colour, alpha * 0.9))
+                    for deg in (start, start + span):
+                        ang = math.radians(90 - deg)
+                        q.drawEllipse(QPointF(cx + math.cos(ang) * r * R, cy - math.sin(ang) * r * R), 2.3, 2.3)
 
     def _ripples(self, q, g):
         q.setBrush(Qt.NoBrush)
-        ratio = abs(math.cos(P.CAM_TILT + self.field.tilt[0])) * 0.9 + 0.1
+        cx, cy, R = g["cx"], g["cy"], g["R"]
         for t0, key in self.ripples:
             u = (self.t - t0) / 1.6
             if not 0 <= u <= 1:
                 continue
             col = QColor(C[key])
-            r = g["R"] * (0.5 + 2.0 * (1 - (1 - u) ** 2))
-            a = int(210 * (1 - u) ** 1.6)
-            q.setPen(QPen(QColor(col.red(), col.green(), col.blue(), a), 2.4 * (1 - u) + 0.6))
-            q.drawEllipse(QPointF(g["cx"], g["cy"]), r, r * ratio)
+            r = R * (1.0 + 1.0 * (1 - (1 - u) ** 2))
+            a = int(190 * (1 - u) ** 1.6)
+            q.setPen(QPen(QColor(col.red(), col.green(), col.blue(), a), 2.2 * (1 - u) + 0.6))
+            q.drawEllipse(QPointF(cx, cy), r, r)
+        sh = self.reactor.shock
+        if sh is not None:                                                  # VERIFIED: a gold shockwave sweeps out through the dial
+            u = RX.ease_out(sh)
+            q.setPen(QPen(rgb(GOLD_B, 230 * (1 - sh) ** 1.4), 5.0 * (1 - sh) + 1.0))
+            q.drawEllipse(QPointF(cx, cy), R * (0.9 + 1.25 * u), R * (0.9 + 1.25 * u))
+
+    def _streams(self, q, g):
+        """Sparks carrying a request from the reactor to the provider being called right now (drawn into the bloom buffer)."""
+        for i, nd in enumerate(self.nodes):
+            if i not in g["pos"] or not self._is_active(nd):
+                continue
+            base = QColor(C[COST_COLOR.get(nd["cost_class"], "accent")])
+            pts = self._link_pts(g, i)
+            q.setPen(Qt.NoPen)
+            for x, y, a, s, u in RX.courier_poly(self.t, pts):
+                q.setBrush(QColor(base.red(), base.green(), base.blue(), int(235 * a)))
+                q.drawEllipse(QPointF(x, y), s, s)
+
+    def _embers(self, q, g):
+        """Warm sparks drifting up from the housing, like a forge: more while it works."""
+        cx, cy, R = g["cx"], g["cy"], g["R"]
+        q.setPen(Qt.NoPen)
+        for x, y, vx, vy, life, age in self.reactor.embers:
+            f = math.sin(math.pi * min(1.0, age / life)) ** 0.8
+            q.setBrush(rgb(RX.mix(GOLD_B, GOLD, age / life), 215 * f * self.reactor.dyn.v["bright"]))
+            q.drawEllipse(QPointF(cx + x * R, cy + y * R), 1.0 + 1.1 * f, 1.0 + 1.1 * f)
 
     # ---- nodes, HUD ----------------------------------------------------------------------------------------------------------
     def _nodes(self, p, g):
@@ -693,14 +661,15 @@ class CoreView(QWidget):
             dim = nd["blocked"] or nd["cooling_s"] > 0
             track = QRectF(pt.x() - nr - 6, pt.y() - nr - 6, 2 * (nr + 6), 2 * (nr + 6))
             p.setBrush(Qt.NoBrush)
-            p.setPen(QPen(qc("line", 200), 3, Qt.SolidLine, Qt.RoundCap))
+            p.setPen(QPen(qc("line2", 200), 3, Qt.SolidLine, Qt.RoundCap))
             p.drawArc(track, -225 * 16, -270 * 16)                            # fuel gauge: how much of the allowance is spent
             if nd["pressure"] > 0:
                 p.setPen(QPen(qc(pressure_color(nd["pressure"])), 3, Qt.SolidLine, Qt.RoundCap))
                 p.drawArc(track, -225 * 16, int(-270 * 16 * min(1.0, nd["pressure"])))
+            hexa = QPolygonF([QPointF(pt.x() + math.cos(math.radians(60 * k + 30)) * nr, pt.y() + math.sin(math.radians(60 * k + 30)) * nr) for k in range(6)])
             if nd["blocked"]:
                 p.setPen(QPen(qc(base, 120), 1.4, Qt.DashLine)); p.setBrush(qc("bg0", 200))
-                p.drawEllipse(pt, nr, nr)
+                p.drawPolygon(hexa)
             else:
                 if active:
                     p.setCompositionMode(QPainter.CompositionMode_Plus)
@@ -710,7 +679,7 @@ class CoreView(QWidget):
                     p.setPen(Qt.NoPen); p.setBrush(gr); p.drawEllipse(pt, nr * 3.0, nr * 3.0)
                     p.setCompositionMode(QPainter.CompositionMode_SourceOver)
                 p.setPen(QPen(qc(base, 255 if not dim else 90), 1.8)); p.setBrush(qc(base, 70 if not dim else 25))
-                p.drawEllipse(pt, nr, nr)
+                p.drawPolygon(hexa)
             p.setPen(Qt.NoPen)
             p.setBrush(qc(base, 255 if not (dim or nd["blocked"]) else 90))
             p.drawEllipse(pt, nr * 0.3, nr * 0.3)
@@ -729,8 +698,8 @@ class CoreView(QWidget):
                 sub, subcol = f"{nd['pressure'] * 100:.0f}% spent", "warn"
             elif active:
                 sub, subcol = "calling...", "accent"
+            self._hit.append((nd["family"], pt, nr, self._tip(nd)))
             if not (active or sub or nd["family"] == self._hover):          # calm: a name is shown only when it matters or you point at it
-                self._hit.append((nd["family"], pt, nr, self._tip(nd)))
                 continue
             label = nd["family"] + (f"  x{len(nd['models'])}" if len(nd["models"]) > 1 else "")
             gap = nr + 12
@@ -742,12 +711,11 @@ class CoreView(QWidget):
             if sub:
                 p.setFont(self._font(self.ui, 8)); p.setPen(qc(subcol))
                 p.drawText(QRectF(x0, pt.y() - 1, 130, 14), al | Qt.AlignVCenter, sub)
-            self._hit.append((nd["family"], pt, nr, self._tip(nd)))
 
     def _glow_text(self, p, rect, text, col, flags, a=255):
         c = QColor(col)
         for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-            p.setPen(QColor(c.red(), c.green(), c.blue(), 38))
+            p.setPen(QColor(c.red(), c.green(), c.blue(), 40))
             p.drawText(rect.translated(dx, dy), flags, text)
         p.setPen(QColor(c.red(), c.green(), c.blue(), a))
         p.drawText(rect, flags, text)
@@ -756,15 +724,19 @@ class CoreView(QWidget):
         p.setCompositionMode(QPainter.CompositionMode_SourceOver)
         w, h = g["w"], g["h"]
         cx = g["cx"]
-        p.setFont(self._font(self.mono, 10, QFont.Bold, 6))                  # wordmark, like the reference's J.A.R.V.I.S.
-        self._glow_text(p, QRectF(0, 10, w, 18), "P.R.A.X.I.S.", C["accent"], Qt.AlignCenter, 235)
+        p.setFont(self._font(self.mono, 11, QFont.Bold, 9))                        # wordmark, flanked by gold rules
+        self._glow_text(p, QRectF(0, 10, w, 20), "PRAXIS", C["gold"], Qt.AlignCenter, 245)
+        p.setPen(QPen(rgb(GOLD, 150), 1.2))
+        for sgn in (-1, 1):
+            p.drawLine(QPointF(cx + sgn * 62, 20), QPointF(cx + sgn * 128, 20))
+            p.drawLine(QPointF(cx + sgn * 128, 20), QPointF(cx + sgn * 136, 14))
         key = MODE_COLOR.get(self.mode, "accent")
         p.setFont(self._font(self.mono, 9, QFont.Bold, 4))
-        self._glow_text(p, QRectF(0, 29, w, 16), self.title, C[key], Qt.AlignCenter, 255)
+        self._glow_text(p, QRectF(0, 31, w, 16), self.title, C[key], Qt.AlignCenter, 255)
         if self.subtitle:
             p.setFont(self._font(self.mono, 8)); p.setPen(qc("muted"))
-            p.drawText(QRectF(0, 45, w, 13), Qt.AlignCenter, self.subtitle)
-        # the pipeline legend: the three rings, with real numbers
+            p.drawText(QRectF(0, 47, w, 13), Qt.AlignCenter, self.subtitle)
+        # the pipeline legend: the three rings, with real numbers (only while there is a pipeline to show)
         lf = self._font(self.mono, 8, QFont.Bold, 1.5)
         p.setFont(lf)
         fm = QFontMetricsF(lf)
@@ -772,44 +744,47 @@ class CoreView(QWidget):
         widths = [14 + fm.horizontalAdvance(f"{n} {t}") + 18 for n, t, _ in items]
         x = cx - sum(widths) / 2.0
         if items:
-            p.setPen(Qt.NoPen); p.setBrush(QColor(3, 8, 14, 150))
-            p.drawRoundedRect(QRectF(x - 8, 60, sum(widths) + 12, 18), 9, 9)
-        for (name, text, key), wd in zip(items, widths):
-            col = QColor(C[key])
-            p.setPen(Qt.NoPen); p.setBrush(QColor(col.red(), col.green(), col.blue(), 235 if key != "dim" else 110))
-            p.drawEllipse(QPointF(x + 5, 69), 3.2, 3.2)
+            p.setPen(QPen(rgb(GOLD, 90), 1.0)); p.setBrush(QColor(5, 8, 12, 170))
+            p.drawPolygon(QPolygonF([QPointF(x - 14, 69), QPointF(x - 6, 61), QPointF(x + sum(widths) + 6, 61),
+                                     QPointF(x + sum(widths) + 14, 69), QPointF(x + sum(widths) + 6, 77), QPointF(x - 6, 77)]))
+        for (name, text, ckey), wd in zip(items, widths):
+            col = QColor(C[ckey])
+            p.setPen(Qt.NoPen); p.setBrush(QColor(col.red(), col.green(), col.blue(), 235 if ckey != "dim" else 110))
+            p.drawPolygon(QPolygonF([QPointF(x + 5, 65.5), QPointF(x + 8.5, 69), QPointF(x + 5, 72.5), QPointF(x + 1.5, 69)]))
             p.setPen(qc("muted")); p.drawText(QRectF(x + 14, 62, 60, 14), Qt.AlignVCenter | Qt.AlignLeft, name)
-            p.setPen(QColor(col.red(), col.green(), col.blue(), 255 if key != "dim" else 130))
+            p.setPen(QColor(col.red(), col.green(), col.blue(), 255 if ckey != "dim" else 130))
             p.drawText(QRectF(x + 14 + fm.horizontalAdvance(name) + 6, 62, 90, 14), Qt.AlignVCenter | Qt.AlignLeft, text)
             x += wd
         vs = self.voice["state"]
         if vs in VOICE_TAG:                                                 # the real voice state, top right
-            tag = VOICE_TAG[vs] if not (vs == "listening" and self.voice["attentive"]) else "LISTENING  \u00b7  go ahead"
+            tag = VOICE_TAG[vs] if not (vs == "listening" and self.voice["attentive"]) else "LISTENING  ·  go ahead"
             tc = QColor(C[VOICE_COLOR[vs]])
             p.setFont(self._font(self.mono, 8, QFont.Bold, 2))
             fmt = QFontMetricsF(self._font(self.mono, 8, QFont.Bold, 2))
-            tw = fmt.horizontalAdvance(tag) + 22
-            p.setPen(Qt.NoPen); p.setBrush(QColor(3, 8, 14, 170))
-            p.drawRoundedRect(QRectF(w - tw - 18, 12, tw, 20), 10, 10)
+            tw = fmt.horizontalAdvance(tag) + 24
+            p.setPen(QPen(rgb(GOLD, 100), 1.0)); p.setBrush(QColor(5, 8, 12, 175))
+            p.drawPolygon(QPolygonF([QPointF(w - tw - 22, 22), QPointF(w - tw - 14, 12), QPointF(w - 18, 12), QPointF(w - 18, 32), QPointF(w - tw - 14, 32)]))
             pulse = 0.6 + 0.4 * math.sin(self.t * 4.0) if vs in ("hearing", "speaking") else 1.0
-            p.setBrush(QColor(tc.red(), tc.green(), tc.blue(), int(255 * pulse))); p.drawEllipse(QPointF(w - tw - 6, 22), 3.2, 3.2)
+            p.setPen(Qt.NoPen); p.setBrush(QColor(tc.red(), tc.green(), tc.blue(), int(255 * pulse))); p.drawEllipse(QPointF(w - tw - 6, 22), 3.2, 3.2)
             p.setPen(QColor(tc.red(), tc.green(), tc.blue(), 235))
-            p.drawText(QRectF(w - tw - 18 + 16, 12, tw - 16, 20), Qt.AlignVCenter | Qt.AlignLeft, tag)
-        if self.caption:                                                     # caption: typed out in a dark box, like the reference
+            p.drawText(QRectF(w - tw + 4, 12, tw - 8, 20), Qt.AlignVCenter | Qt.AlignLeft, tag)
+        if self.caption:                                                     # caption: typed out in a dark plate with a gold edge
             f3 = self._font(self.mono, 10)
             p.setFont(f3)
             fm3 = QFontMetricsF(f3)
             shown = self.caption_shown
-            full_w = min(w * 0.78, fm3.horizontalAdvance(self.caption) + 28)
-            text = fm3.elidedText(shown, Qt.ElideRight, full_w - 28)
+            full_w = min(w * 0.78, fm3.horizontalAdvance(self.caption) + 34)
+            text = fm3.elidedText(shown, Qt.ElideRight, full_w - 34)
             cur = "▌" if (self.cap_t < len(self.caption) / 70.0 or int(self.t * 2) % 2 == 0) else " "
             box = QRectF(cx - full_w / 2, h - 52, full_w, 28)
-            p.setPen(Qt.NoPen); p.setBrush(QColor(0, 0, 0, 215))
-            p.drawRoundedRect(box, 6, 6)
-            p.setPen(QPen(qc(LEVEL_COLOR.get(self.cap_level, "accent"), 120), 1)); p.setBrush(Qt.NoBrush)
-            p.drawRoundedRect(box.adjusted(0.5, 0.5, -0.5, -0.5), 6, 6)
+            p.setPen(QPen(qc(LEVEL_COLOR.get(self.cap_level, "accent"), 110), 1)); p.setBrush(QColor(4, 6, 9, 225))
+            p.drawPolygon(QPolygonF([QPointF(box.left() + 8, box.top()), QPointF(box.right() - 8, box.top()), QPointF(box.right(), box.top() + 8),
+                                     QPointF(box.right(), box.bottom()), QPointF(box.left() + 8, box.bottom()), QPointF(box.left(), box.bottom() - 8),
+                                     QPointF(box.left(), box.top() + 8)]))
+            p.setPen(QPen(rgb(GOLD, 220), 2.0)); p.drawLine(QPointF(box.left() + 1, box.top() + 9), QPointF(box.left() + 1, box.bottom() - 9))
             p.setPen(qc("text" if self.cap_level == "info" else LEVEL_COLOR.get(self.cap_level, "text")))
-            p.drawText(box.adjusted(14, 0, -10, 0), Qt.AlignVCenter | Qt.AlignLeft, text + cur)
+            p.drawText(box.adjusted(18, 0, -10, 0), Qt.AlignVCenter | Qt.AlignLeft, text + cur)
         if self.footer:
             p.setFont(self._font(self.mono, 8, None, 2)); p.setPen(qc("dim"))
             p.drawText(QRectF(0, h - 20, w, 14), Qt.AlignCenter, self.footer)
+

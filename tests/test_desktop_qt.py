@@ -10,6 +10,7 @@ try:
     from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QApplication, QLineEdit, QMenuBar, QPlainTextEdit, QPushButton, QToolBar
     from praxis.desktop.qt import theme
+    from tests.qtutil import dispose
     from praxis.desktop.qt.app import MainWindow, STRATEGY, apply_view
     from praxis.desktop.qt.core import CoreView
     from praxis.desktop.qt.dialogs import ApprovalDialog
@@ -125,7 +126,7 @@ class OneScreen(unittest.TestCase):
         ctl.start()
         win = MainWindow(ctl, voice_factory=voice_factory or fake_voice)
         win.show()
-        self.addCleanup(lambda: (ctl.stop(), setattr(win, "_closing", True), win.timer.stop(), win.close()))
+        self.addCleanup(lambda: (ctl.stop(), setattr(win, "_closing", True), win.timer.stop(), dispose(win)))
         self.assertTrue(pump(lambda: ctl.state == "idle"), ctl.error)
         return win, ctl, ws
 
@@ -199,7 +200,7 @@ class OneScreen(unittest.TestCase):
         ws, home = tempfile.mkdtemp(), tempfile.mkdtemp()
         ctl = Controller(ws, stack_factory=lambda w: fake_stack([GOOD]), home=home); ctl.start()
         win = MainWindow(ctl, voice_factory=fake_voice); win.show()
-        self.addCleanup(lambda: (setattr(win, "_closing", True), win.timer.stop(), win.close()))
+        self.addCleanup(lambda: (setattr(win, "_closing", True), win.timer.stop(), dispose(win)))
         end = time.time() + 5
         while ctl.state != "idle" and time.time() < end:      # wait WITHOUT letting the UI tick even once
             time.sleep(0.01)
@@ -212,7 +213,7 @@ class OneScreen(unittest.TestCase):
         ws, home = tempfile.mkdtemp(), tempfile.mkdtemp()
         ctl = Controller(ws, stack_factory=lambda w: fake_stack([GOOD], hook=lambda: gate.wait(10)), home=home); ctl.start()
         win = MainWindow(ctl, voice_factory=fake_voice); win.show()
-        self.addCleanup(lambda: (gate.set(), setattr(win, "_closing", True), win.timer.stop(), win.close()))
+        self.addCleanup(lambda: (gate.set(), setattr(win, "_closing", True), win.timer.stop(), dispose(win)))
         pulses = []
         orig = win.core.pulse
         win.core.pulse = lambda level="info": (pulses.append(level), orig(level))[1]
@@ -228,7 +229,7 @@ class OneScreen(unittest.TestCase):
 
     # ---- the core maps the real state ---------------------------------------------------------------------------------------
     def test_state_mapping(self):
-        core = CoreView(); core.timer.stop(); self.addCleanup(core.close)
+        core = CoreView(); core.timer.stop(); self.addCleanup(lambda: dispose(core))
         steps = [StepView("s1", "fs.write", "w", 2, "verified"), StepView("s2", "shell.run", "r", 2, "running", ["s1"])]
         cases = [
             (View(status="RUNNING", steps=steps, goal_text="g"), "working", False, "working", "RUNNING", 0.5),
@@ -248,7 +249,7 @@ class OneScreen(unittest.TestCase):
         self.assertEqual(core.active, "groq/gpt-oss")
 
     def test_the_view_maps_onto_the_three_rings(self):
-        core = CoreView(); core.timer.stop(); self.addCleanup(core.close)
+        core = CoreView(); core.timer.stop(); self.addCleanup(lambda: dispose(core))
         steps = [StepView("s1", "fs.write", "w", 2, "verified"), StepView("s2", "shell.run", "r", 2, "running", ["s1"]),
                  StepView("s3", "fs.write", "x", 2, "pending", ["s2"])]
         sts = ["verified", "running", "pending"]
@@ -291,7 +292,7 @@ class OneScreen(unittest.TestCase):
         ws, home = tempfile.mkdtemp(), tempfile.mkdtemp()
         ctl = Controller(ws, stack_factory=lambda w: (gate.wait(10), fake_stack([GOOD]))[1], home=home); ctl.start()
         win = MainWindow(ctl, voice_factory=fake_voice); win.show()
-        self.addCleanup(lambda: (gate.set(), setattr(win, "_closing", True), win.timer.stop(), win.close()))
+        self.addCleanup(lambda: (gate.set(), setattr(win, "_closing", True), win.timer.stop(), dispose(win)))
         self.assertTrue(pump(lambda: "Booting" in win.core.caption, 3))
         self.assertEqual(win.core.footer, ""); self.assertFalse(win.prompt.isEnabled())
         gate.set()
@@ -299,7 +300,7 @@ class OneScreen(unittest.TestCase):
         def boom(w): raise RuntimeError("no providers configured")
         ctl2 = Controller(tempfile.mkdtemp(), stack_factory=boom, home=tempfile.mkdtemp()); ctl2.start()
         win2 = MainWindow(ctl2, voice_factory=fake_voice); win2.show()
-        self.addCleanup(lambda: (setattr(win2, "_closing", True), win2.timer.stop(), win2.close()))
+        self.addCleanup(lambda: (setattr(win2, "_closing", True), win2.timer.stop(), dispose(win2)))
         self.assertTrue(pump(lambda: win2.core.title == "ERROR", 5))
         self.assertIn("no providers configured", win2.core.caption); self.assertEqual(win2.core.cap_level, "bad")
 

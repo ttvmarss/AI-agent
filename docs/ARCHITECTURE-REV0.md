@@ -1618,4 +1618,44 @@ three-ring legend only appears while there is a plan; provider nodes are quiet d
 blocked, nearly spent, or pointed at. Hardening found on the way: an exception inside a draw routine used to leave the painter open, which
 crashes the whole app (a hard segfault, not an error); painting is now wrapped so a bug there is an exception only.
 
-*End of Revision Zero (with addenda 38 to 45). Failures get logged, not hidden.*
+## 46. Status addendum — no name needed, and an Iron Man reactor instead of a hologram (2026-10-02)
+
+**Owner's feedback:** having to say its name before it answers is annoying; the UI is bland and "too holographic": make it Tony Stark themed
+(not Tony Stark himself in the background, but the idea).
+
+**46.1 Just talk.** `[voice] wake_required` is now `false` by default (the library default stays `true`, so tests and embedders are explicit).
+In this open mode every utterance is considered, with filters so it does not act on what is not for it: (1) **its own voice** coming back through
+the room is recognised by comparing the transcript with what it said in the last 45 s (similar sentence, or at least 85% of the words) and
+dropped, on top of the existing deaf-while-speaking tail; (2) **speech longer than 25 words** without its name is someone else's conversation, a
+podcast or a television; (3) a longer list of phantom transcripts (Whisper's "bye bye", "thanks for watching", "I'm sorry", single filler words);
+(4) a stray "yes", "approve" or "deny" when nothing was asked is ignored **silently** (it used to answer "Nothing is waiting..." which a television could
+trigger forever). **Approvals still always start with its name**, in both modes: the television-says-approve hole found by the stress campaign stays
+closed. STOP and mute still work without the name. Tested in unit tests and in randomised conversations in both modes (an approval is never given without
+its name; a goal never starts while an approval is pending). **The trade-off to know:** in open mode a television or another person who says a short
+imperative ("delete the old files") can start a task; the guard still asks you before anything risky, a workspace snapshot makes it reversible, and
+`wake_required = true` brings the name back.
+
+**46.2 The Reactor.** The galaxy, the projector, the beam, the flicker, glitch, ghost and sweep are gone. `praxis/desktop/qt/reactor.py` (pure
+math) and `core.py` (the painter) draw an **arc reactor** in a gunmetal housing with a gold bevel: ten copper coils that spin up and chase light round
+while it works, a rotating inner triangle, a palladium ring and a core that flares with every real event; around it a radial equaliser of the real audio
+(1.06 to 1.24 R), then the three flat HUD gauge rings (VERIFY 1.38 R, ACT 1.58 R, PLAN 1.78 R) whose arcs are still the real steps and checks, then a
+rotating degree scale with bearing numerals and four targeting brackets that close in while it hears you; gold sparks rise from the housing like a forge;
+a verified goal sends a gold shockwave; AIs are hexagons at the sides joined by HUD polylines; headline, caption plate and chips use gold-edged cut-corner
+plates. Palette: gold `#f2b441`, gunmetal, reactor blue `#8fe3ff`, orange `#ff9f43` for needs-you, red `#ff4a3d` for failed, green kept for verified
+arcs. The window background is a faint armour-plate hex pattern, not a stage set. Buttons and focus rings in dialogs are gold. Everything the old widget
+promised still holds (nothing on screen is invented; the same API), and the tests were rewritten for it: 25 pure-engine tests (`test_reactor.py`) and 34
+rendered-pixel tests (`test_core_view.py`: state colours read from the lit coils, each ACT/VERIFY arc sampled at its own angle, sealed ring closed, the voice
+ring responds to loudness, the gold shockwave is really on screen, the stream goes to exactly that provider, layout at four window sizes, performance,
+reduced motion, poisoned numbers). `particles.py` and `hologram.py` and their tests were deleted rather than kept as dead code.
+Defects found on the way, all fixed with tests: (1) closing the app while it was speaking could raise in the speech thread ("cannot schedule new
+futures after shutdown"); (2) **a whole-suite crash**: Qt widgets that were only garbage collected could be finalised by the collector on a worker thread
+("Timers cannot be stopped from another thread", then a segfault); tests now dispose widgets on the main thread and the window stops its core's timer when
+it closes; (3) in the live voice test the microphone caught the end of its own greeting glued to the user's words ("Just talk to me. How are you?"):
+leading words that exactly match one of its own recent sentences are now cut before anything is interpreted; (4) two timing races in my own tests of the
+follow-up window (the answering thread opened the window after the fake clock had jumped), fixed with an explicit `wait_chats`.
+Sabotage round on this phase: 15 mutants (echo filter, long-speech filter, silent stray answers, gold bevel, shockwave, coil chase, power-up, event flare,
+calm node labels, sealed ring, voice ring floor, bracket closing) and one survivor (the targeting brackets closing in), closed with a test and re-verified.
+**Not verified:** how it looks on your display (I reviewed rendered frames on a Linux offscreen surface, not Windows with your DPI), and its frame rate on
+your GPU (about as cheap as before: a handful of vector shapes plus the same bloom; it lowers its own detail if frames run slow).
+
+*End of Revision Zero (with addenda 38 to 46). Failures get logged, not hidden.*

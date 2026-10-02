@@ -1,6 +1,6 @@
-"""PRAXIS: one screen, and you talk to it. The window IS the core ("The Loom"). No menus, pages, chat box or mic button.
+"""PRAXIS: one screen, and you talk to it. The window IS the core ("The Reactor"). No menus, pages, chat box or mic button.
 
-  say "PRAXIS, <outcome>"   run it (it answers out loud)     Esc / Ctrl+. / say "stop"   STOP (restores the workspace)
+  just talk (no name needed)   it answers out loud; "stop" stops it     Esc / Ctrl+. / say "stop"   STOP (restores the workspace)
   F2 / F3  data class / frugality     F4  mute the microphone     Ctrl+O  open a folder     Ctrl+R  resume
 (If voice cannot start - no microphone, engine missing - a typing line appears so the app is never unusable.)
 Everything you need to know is on the core itself (state, rings, stream, caption, the live settings in the footer).
@@ -238,7 +238,7 @@ class MainWindow(QMainWindow):
             text = level = None
             for e in u.events:
                 text, level = summarize(e)
-                self.core.pulse(level)               # a real event: the seed flares, a ripple runs through the galaxy
+                self.core.pulse(level)               # a real event: the core flares, a ripple runs outward
             if text:
                 self.core.set_caption(text, level)   # and the latest one is typed out
             if self.voice is not None and u.events:
@@ -339,6 +339,7 @@ class MainWindow(QMainWindow):
                 QApplication.processEvents()
                 time.sleep(0.05)
         self._closing = True
+        self.core.dispose()
         if self.voice is not None:
             self.voice.close()
         try:

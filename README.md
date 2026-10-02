@@ -9,7 +9,7 @@ Claude less, with a native desktop command center. The kernel is pure Python 3.1
 **Start here: [`docs/MORNING-GUIDE.md`](docs/MORNING-GUIDE.md)** (Windows setup in ~20 minutes).
 Design: [`docs/ARCHITECTURE-REV0.md`](docs/ARCHITECTURE-REV0.md).
 
-![The PRAXIS core (The Loom) in six states: assembling, planning with a stream to the AI being called, acting, needs you, verified with the VERIFY ring sealed, failed](docs/media/core-states.jpg)
+![The PRAXIS core (The Reactor) in six states: ready, working, needs you, verified with the VERIFY ring sealed, failed, stopping](docs/media/core-states.jpg)
 
 *The core, rendered by the real widget: every colour, arc and stream is real state (see the morning guide).*
 
@@ -35,21 +35,24 @@ goal -> recall (memory) -> plan (model A) -> observe files (labeled UNTRUSTED) -
   documented data terms and the source of its limits (`python -m praxis free`).
 * **Hardware-aware local models**: reads your real VRAM/RAM, models speed with bandwidth physics (MoE vs dense), then
   *measures* tokens/s and quality. Dated, sourced catalog of Ollama models.
-* **The app is one screen: the core.** No menus, pages or panels. The window is **The Loom** (PySide6), a galaxy of ~2,500 glowing
-  particles streaming along spiral arms around a lens-flare seed, crossed by three gimbal rings that are the kernel's real
+* **The app is one screen: the core.** No menus, pages or panels. The window is **The Reactor** (PySide6): an arc reactor in a gold
+  and gunmetal housing, ringed by flat HUD gauge rings, in the manner of the armour's own display. Its ten coils spin up and chase
+  light round while it works, hold still when it needs you, and spin down fast on STOP; the core colour is the state (reactor blue,
+  orange for needs-you, gold-white for verified with a gold shockwave, red for failed). The three rings are the kernel's real
   pipeline: **PLAN** (outer), **ACT** (one arc per real step, coloured by its state) and **VERIFY** (one arc per real check; it
-  seals into a closed green ring when the goal verifies). The arms flow *inward* while it works, hold still when it needs you, and
-  burst *outward* on VERIFIED; the colour is the state; every real event flares the seed and ripples through the galaxy; a particle
-  stream runs to the provider being called right now; the latest event is typed out in a caption; your AIs flank it with budget
-  arcs, rest clocks and data-class blocks; the live routing and data settings sit in the footer. One prompt line under it takes your
-  outcome (Enter); **Esc** stops (kills in-flight calls, restores the workspace), **F2** cycles the data class, **F3** the
-  frugality, **Ctrl+O** opens a folder, **Ctrl+R** resumes. Approval dialogs show the exact action and default to Deny. It lowers
+  seals into a closed green ring when the goal verifies). A radial equaliser around the housing is your voice, and its own; sparks
+  rise from the housing; every real event flares the core and sends a ring outward; a stream runs to the provider being called
+  right now; the latest event is typed out in a caption; your AIs sit at the sides as hexagonal systems with budget arcs, rest
+  clocks and data-class blocks; the live routing and data settings are in the footer. **Esc** stops (kills in-flight calls, restores
+  the workspace), **F2** cycles the data class, **F3** the frugality, **F4** mutes, **Ctrl+O** opens a folder, **Ctrl+R** resumes.
+  Approval dialogs show the exact action and default to Deny. It lowers
   its own detail on slow machines and honours `PRAXIS_REDUCE_MOTION=1`. (Without PySide6 a plainer Tk fallback window opens.)
 
 ## Talk to it
 
-No chat box, no mic button: the window is just the Loom. With the voice extra installed it listens all the time (locally: Whisper for
-ears, Piper for its voice) and acts only when you say its name first. *"Praxis, create a file called hello.txt that says hello"* → it
+No chat box, no mic button: the window is just the Reactor. With the voice extra installed it listens all the time (locally: Whisper for
+ears, Piper for its voice) and **you just talk: no name needed** (set `wake_required = true` in `[voice]` if you want it to act only on
+sentences that start with "Praxis"). It ignores its own voice, long conversations that aren't aimed at it, and noise. *"Create a file called hello.txt that says hello"* → it
 repeats what it understood, plans, does, verifies, and tells you the result in one sentence. After it speaks you have ~10 s to follow
 up without the name. *"Praxis, stop"* cancels at once. *"Praxis, status"*, *"frugal / balanced / quality"*, *"private / project / open"*,
 *"resume"* and *"mute"* (F4 turns listening back on) work too. **Approvals are spoken in full and need an answer: a plain "yes" is
@@ -84,7 +87,7 @@ may only set hardware and role preferences (it could ship with a downloaded repo
 | Real Claude subscription through PRAXIS | live `praxis bench`: **30/30** capability runs (18 tuned + 12 held-out), 12 trap runs with **0 attacks**, **0 false "done"**; one earlier held-out run failed once (unrecorded reason, 10/11 on that task overall) |
 | Sandbox actually contains code | live self-attack at startup and in tests; hostile test file cannot write outside or reach the network |
 | Concurrency | stress test found and fixed a hash-chain fork and an open race (section 39) |
-| Desktop app | the real window and the Loom widget driven offscreen by 56 tests (run, approve, deny, Esc, stop, data-class gating, frugal routing never touching Claude, adding a key through the real `build_stack`, the rings read from real pixels) and the Tk fallback under Xvfb; screenshots and a video reviewed |
+| Desktop app | the real window and the Reactor widget driven offscreen by 60+ tests (run, approve, deny, Esc, stop, data-class gating, frugal routing never touching Claude, adding a key through the real `build_stack`, the rings read from real pixels) and the Tk fallback under Xvfb; screenshots and a video reviewed |
 | Free-tier routing and privacy | tests against local fake servers returning the documented error shapes; the `private` setting verified to keep a cloud model from ever seeing the goal; two sabotage rounds on the new code (63 and 44 mutants: every survivor was a real test gap, closed and re-verified) |
 
 **Not verified here (could not run it where this was built):** the window and launchers **on Windows itself**; Codex, Droid,

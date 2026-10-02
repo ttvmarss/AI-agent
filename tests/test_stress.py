@@ -286,6 +286,24 @@ class DeviceFailures(unittest.TestCase):
         finally:
             lp.close()
 
+    def test_closing_while_it_is_speaking_does_not_throw_in_a_background_thread(self):
+        # Found while rebuilding the screen: shutting the synthesiser down mid-sentence raised "cannot schedule new futures after shutdown".
+        from praxis.voice import loop as L
+        from praxis.voice.devices import FakeMic, FakeSpeaker
+        from praxis.voice.stt import FakeRecognizer
+        from praxis.voice.tts import FakeVoice
+        errors = []
+        old = threading.excepthook
+        threading.excepthook = lambda a: errors.append(a)
+        try:
+            for _ in range(5):
+                lp = L.VoiceLoop(Rec(), FakeRecognizer(), FakeMic(), FakeSpeaker(realtime=True), FakeVoice(ms_per_word=30)); lp.start()
+                lp.say("First sentence is here. Second sentence follows it. Third one comes after that. And a fourth for luck.")
+                time.sleep(0.15); lp.close(); time.sleep(0.4)
+        finally:
+            threading.excepthook = old
+        self.assertEqual([e.exc_value for e in errors], [])
+
     def test_when_the_speaker_or_voice_fails_the_words_are_kept_for_the_screen(self):
         from praxis.voice import loop as L
         from praxis.voice.devices import FakeMic, FakeSpeaker

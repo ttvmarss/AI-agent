@@ -8,6 +8,7 @@ Rules that hold whatever the recogniser hears:
   * it never acts on text it already acted on in the last few seconds (an echo or a repeat).
 """
 import difflib
+import re
 import threading
 import time
 
@@ -27,6 +28,7 @@ class Conductor:
         self._say_raw, self.recent = say, []         # what it said lately: the echo filter compares what it hears against this
         self.wake_required = wake_required          # False: it answers whatever it hears (still never approving without its name)
         self.chat, self.chat_lock, self.chatting = chat, threading.Lock(), 0
+        self._chat_threads = []
         self.wake_word, self.attentive_s, self.approval_s = wake_word, attentive_s, approval_s
         self.log = log or (lambda *_: None)
         self.lock = threading.RLock()
@@ -38,8 +40,28 @@ class Conductor:
         self.last_unknown_at = -99.0
 
     def say(self, text, urgent=False):
-        self.recent = ([(self.clock(), wake.normalize(text))] + self.recent)[:8]
+        now = self.clock()
+        parts = [wake.normalize(s) for s in re.split(r"(?<=[.!?])\s+", str(text or "")) if s.strip()]
+        self.recent = ([(now, wake.normalize(text))] + [(now, p) for p in parts if p] + self.recent)[:16]     # the whole thing and each sentence
         return self._say_raw(text, urgent)
+
+    def _strip_my_echo(self, text, now):
+        """The microphone sometimes catches the END of what it was saying glued to the start of what you say ("Just talk to me. How are you?").
+        Cut any leading words that are exactly one of its own recent sentences."""
+        words = re.findall(r"\S+", str(text or ""))
+        for _ in range(3):
+            cut = 0
+            for t, said in self.recent:
+                sw = said.split()
+                if now - t > 45 or len(sw) < 2 or len(sw) >= len(words):
+                    continue
+                head = wake.normalize(" ".join(words[:len(sw)])).split()
+                if head == sw:
+                    cut = max(cut, len(sw))
+            if not cut:
+                break
+            words = words[cut:]
+        return " ".join(words)
 
     def _is_my_own_voice(self, norm, now):
         """Room echo that got past the deaf tail: the transcript is (nearly) something it just said."""
@@ -59,6 +81,7 @@ class Conductor:
         """Handle one transcript. Returns what it did (also useful in tests and logs)."""
         with self.lock:
             now = self.clock()
+            text = self._strip_my_echo(text, now)
             norm = wake.normalize(text)
             if not norm or norm in PHANTOM:
                 return "ignored: noise"
@@ -174,6 +197,12 @@ class Conductor:
             return "refused"
         return "ignored"
 
+    def wait_chats(self, timeout=5.0):
+        """Block until every answer in progress has been said and its follow-up window opened (used by tests and by shutdown)."""
+        end = time.time() + timeout
+        for t in list(self._chat_threads):
+            t.join(max(0.0, end - time.time()))
+
     def _converse(self, text):
         """Answer in words, off the listening thread. Small talk is instant; anything else asks a model, and if that takes a while
         it says so once rather than leaving you wondering."""
@@ -195,7 +224,9 @@ class Conductor:
                     self.say(reply)
                     with self.lock:
                         self._attend(self.clock())
-        threading.Thread(target=work, daemon=True, name="praxis-chat").start()
+        th = threading.Thread(target=work, daemon=True, name="praxis-chat")
+        self._chat_threads = [t for t in self._chat_threads if t.is_alive()] + [th]
+        th.start()
 
     def _attend(self, now):
         self.attentive_until = max(self.attentive_until, now + self.attentive_s)

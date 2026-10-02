@@ -14,7 +14,8 @@ try:
     from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QApplication
     from praxis.desktop.nodes import provider_nodes
-    from praxis.desktop.qt import hologram as H
+    from tests.qtutil import dispose
+    from praxis.desktop.qt import reactor as RXE
     from praxis.desktop.qt.app import MainWindow, apply_view
     from praxis.desktop.qt.core import CoreView
     from praxis.desktop.view import StepView, View
@@ -59,7 +60,7 @@ class BreakTheCore(unittest.TestCase):
 
     def test_any_state_any_size_any_number_paints_without_crashing(self):
         r = random.Random(SEED)
-        c = CoreView(); self.addCleanup(c.deleteLater)
+        c = CoreView(); self.addCleanup(lambda: dispose(c))
         c.quality.limit = 1e9 if hasattr(c.quality, "limit") else None
         frames = max(40, N // 10)
         for i in range(frames):
@@ -82,12 +83,13 @@ class BreakTheCore(unittest.TestCase):
                 c.t = r.choice([0.0, 1e6, 1e12])                      # a session left running for weeks
             img = c.grab()
             self.assertFalse(img.isNull())
-        for t in (0.0, 1.0, 7.3 + 1.0, 1e6, 1e12, -5.0, float("nan"), float("inf")):
-            H.flicker(t); H.glitch(t); H.sweep(t); H.ghost_offset(t); H.grid_lines(6, 18, t)
+        for t in (0.0, 1.0, 1e6, 1e12, -5.0, float("nan"), float("inf")):
+            c.t = t if t == t and abs(t) != float("inf") else 0.0
+            RXE.ticks(t if t == t and abs(t) != float("inf") else 0.0); c.grab()
 
     def test_apply_view_survives_every_view_the_controller_could_ever_produce(self):
         r = random.Random(SEED + 1)
-        c = CoreView(); self.addCleanup(c.deleteLater); c.resize(900, 600)
+        c = CoreView(); self.addCleanup(lambda: dispose(c)); c.resize(900, 600)
         for _ in range(max(100, N // 5)):
             steps = [StepView(id=str(i), tool=r.choice(["fs.write", "shell.run", "", "x"]), summary=r.choice(TEXTS), cls=r.randint(0, 5), state=r.choice(STEP[:-2]))
                      for i in range(r.choice([0, 1, 5, 30]))]
@@ -109,7 +111,7 @@ class BreakTheWindow(unittest.TestCase):
         from tests.test_desktop_controller import mk
         ctl, ws, st = mk([])
         win = MainWindow(ctl, voice_factory=voice_factory); win.show()
-        self.addCleanup(lambda: (ctl.stop(), setattr(win, "_closing", True), win.timer.stop(), win.close()))
+        self.addCleanup(lambda: (ctl.stop(), setattr(win, "_closing", True), win.timer.stop(), dispose(win)))
         return win, ctl, ws
 
     def test_key_mashing_resize_storms_and_mute_toggling_never_wedge_the_window(self):

@@ -126,7 +126,10 @@ class VoiceLoop:
                 if self._closing:
                     return
                 text = self._ttsq.pop(0)
-            self._speak(text)
+            try:
+                self._speak(text)
+            except RuntimeError:
+                return                                    # the synthesiser was shut down while we were speaking: the app is closing
 
     def _speak(self, text):
         """Say one utterance sentence by sentence: the next sentence is being synthesised while the current one plays, so speech

@@ -217,6 +217,7 @@ class Conversation(unittest.TestCase):
         import time as _t
         end = _t.time() + 3
         while len(self.said) < n and _t.time() < end: _t.sleep(0.01)
+        self.c.wait_chats()                                          # ...and the answering thread has opened its follow-up window
 
     def test_task_or_chat(self):
         from praxis.voice.chat import classify
@@ -295,6 +296,7 @@ class OpenMode(unittest.TestCase):
         import time as _t
         end = _t.time() + 3
         while len(self.said) < n and _t.time() < end: _t.sleep(0.01)
+        self.c.wait_chats()                                          # ...and the answering thread has opened its follow-up window
 
     def test_it_answers_without_its_name(self):
         self.assertEqual(self.c.hear("how are you doing today"), "chat"); self.wait(); self.assertIn("nominal", self.said[0])
@@ -311,6 +313,19 @@ class OpenMode(unittest.TestCase):
         self.assertEqual(self.a.calls, [])
         self.t[0] += 60                                                   # long afterwards the same words are fair game again
         self.assertNotEqual(self.c.hear("Done. 2 checks passed."), "ignored: my own voice")
+
+    def test_the_tail_of_its_own_speech_glued_to_your_words_is_cut_off(self):
+        # seen in the live test: the recogniser heard "Just talk to me. How are you?" (its greeting's last sentence + the user's question)
+        self.c.say("Good afternoon. I'm listening. Just talk to me.")
+        self.t[0] += 2
+        self.assertEqual(self.c.hear("Just talk to me. How are you?"), "chat"); self.wait(2)
+        self.assertIn("nominal", self.said[-1])
+        self.assertEqual(self.a.calls, [])
+        self.t[0] += 10; self.said.clear()
+        self.assertEqual(self.c.hear("I'm listening. Just talk to me. Create a file called a.txt with the word hi"), "goal")
+        self.assertEqual(self.a.calls[-1], ("submit", "Create a file called a.txt with the word hi"))
+        self.t[0] += 10
+        self.assertEqual(self.c.hear("Just talk to me"), "ignored: my own voice")               # all echo: nothing left to act on
 
     def test_other_peoples_long_conversations_and_noise_are_ignored(self):
         talk = "so then he said that we should probably go ahead and " + "talk about the quarterly numbers " * 6
