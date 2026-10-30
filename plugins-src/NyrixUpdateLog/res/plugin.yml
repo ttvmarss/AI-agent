@@ -1,0 +1,5 @@
+name: NyrixUpdateLog
+version: 1.0.0
+main: dev.nyrix.updatelog.NyrixUpdateLog
+api-version: "1.21"
+description: Posts what changed to Discord #updates after the server restarts with updated plugins.

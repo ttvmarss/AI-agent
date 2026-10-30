@@ -1,0 +1,8 @@
+# NyrixUpdateLog - after a restart, posts which plugin jars changed (plus plugins/NyrixUpdateLog/notes.txt) to Discord.
+# Bot token: leave empty to reuse bot-token from plugins/NyrixDiscord/config.yml (or the DISCORD_BOT_TOKEN env var).
+bot-token: ""
+channel-id: "1559636493171949569"
+# Seconds to wait after startup before posting.
+delay-seconds: 20
+# Plugin jar files to ignore in the change check (base names, case-insensitive).
+ignore: []

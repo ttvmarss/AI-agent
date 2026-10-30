@@ -1,0 +1,16 @@
+# NyrixInvestigate - /sus investigate <case-id> for the investigator who claimed a case in Discord.
+# Case data is read from plugins/NyrixClaims/claims.json (never modified here).
+# Bot token: leave empty to reuse NyrixDiscord's token (or DISCORD_BOT_TOKEN).
+bot-token: ""
+poll-seconds: 5
+# DM the investigator the copyable command when they claim a case.
+dm-on-claim: true
+messages:
+  prefix: "&8[&cInvestigate&8] &7"
+  usage: "&7Usage: &f/sus investigate <case-id>"
+  no-case: "&cThat case doesn't exist."
+  not-claimed: "&cThat case isn't claimed. Claim it with the button in Discord first."
+  closed: "&cThat case is already closed."
+  not-yours: "&cOnly the assigned investigator (%staff%) or the owner can investigate this case."
+  offline: "&cThe flagged player is offline right now. The case stays yours; try again when they return."
+  starting: "&7Starting your investigation of &f%player%&7. Use &f/sus stop &7to exit and return."

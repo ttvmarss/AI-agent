@@ -1,0 +1,6 @@
+name: NyrixInvestigate
+version: 1.0.0
+main: dev.nyrix.investigate.NyrixInvestigate
+api-version: "1.21"
+depend: [NyrixClaims]
+description: Claim-to-spectate - /sus investigate <case-id> for the assigned investigator, plus a private Discord DM with the command.
