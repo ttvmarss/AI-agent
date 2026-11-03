@@ -1,0 +1,14 @@
+# Render blueprint: web service + background worker sharing one persistent disk would require same-service;
+# simplest correct setup is ONE service running API + embedded worker (RUN_WORKER_IN_API=1) with a disk at /data.
+services:
+  - type: web
+    name: unstable-analyzer
+    runtime: docker
+    plan: starter
+    healthCheckPath: /healthz
+    disk: {name: data, mountPath: /data, sizeGB: 50}
+    envVars:
+      - {key: RUN_WORKER_IN_API, value: "1"}
+      - {key: ADMIN_TOKEN, sync: false}
+      - {key: ANTHROPIC_API_KEY, sync: false}
+      - {key: PUBLIC_BASE_URL, sync: false}
