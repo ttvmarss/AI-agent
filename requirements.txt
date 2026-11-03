@@ -1,0 +1,7 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+anthropic>=0.40
+yt-dlp
+python-multipart
+httpx
+pytest

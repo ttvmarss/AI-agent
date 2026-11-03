@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Unstable Analyzer</title>
+<style>
+:root{--bg:#fff;--fg:#14181f;--mut:#667085;--card:#f3f5f8;--acc:#2f6fed;--bad:#c62828;--ok:#1b7f3b}
+@media(prefers-color-scheme:dark){:root{--bg:#10141a;--fg:#e8ecf2;--mut:#98a2b3;--card:#1b222c;--acc:#6b9bff;--bad:#ff6b6b;--ok:#5fd18a}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.4 -apple-system,system-ui,sans-serif;padding:0 16px 80px}
+nav{position:sticky;top:0;background:var(--bg);display:flex;gap:6px;overflow-x:auto;padding:10px 0;z-index:2}
+nav button{flex:none}button,input,textarea,select{font:inherit;padding:10px 12px;border-radius:10px;border:1px solid var(--mut);background:var(--card);color:var(--fg)}
+button.p{background:var(--acc);color:#fff;border:0}button.on{outline:2px solid var(--acc)}
+.c{background:var(--card);border-radius:12px;padding:12px;margin:10px 0;overflow-wrap:anywhere}.m{color:var(--mut);font-size:13px}
+.b{color:var(--bad)}.g{color:var(--ok)}textarea,input{width:100%;margin:4px 0}progress{width:100%}img{max-width:100%;border-radius:8px}
+</style></head><body>
+<h2>Unstable Analyzer</h2><div id="warn" class="c b" hidden></div>
+<nav id="nav"></nav><div id="v"></div>
+<script>
+const T=['Channels','Videos','Jobs','World','Missing','Share'];let tab='Channels',tok=localStorage.tok||'';
+const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function api(p,o={}){o.headers={...(o.headers||{}),Authorization:'Bearer '+tok};if(o.body&&!(o.body instanceof FormData)){o.headers['Content-Type']='application/json';o.body=JSON.stringify(o.body)}
+ const r=await fetch(p,o);if(r.status==401||r.status==503){const t=prompt('Admin token');if(t){tok=t;localStorage.tok=t;return api(p,o)}}
+ if(!r.ok)throw new Error(p+' '+r.status+' '+await r.text());return r.json()}
+function nav(){$('#nav').innerHTML=T.map(t=>`<button class="${t==tab?'on':''}" onclick="tab='${t}';show()">${t}</button>`).join('')}
+async function show(){nav();const v=$('#v');v.innerHTML='Loading…';try{
+ const s=await api('/api/summary');$('#warn').hidden=s.vision_configured;$('#warn').textContent='Vision model not configured (ANTHROPIC_API_KEY): video analysis jobs will fail rather than invent results.';
+ await views[tab](v,s)}catch(e){v.innerHTML=`<div class="c b">${esc(e.message)}</div>`}}
+const views={
+async Channels(v){const ch=await api('/api/channels');v.innerHTML=`<div class="c"><b>Add channels</b> (one URL per line)<textarea id="u" rows="4" placeholder="https://www.youtube.com/@FlameFrags"></textarea><button class="p" onclick="addCh()">Add &amp; discover</button></div>`+
+ ch.map(c=>`<div class="c"><b>${esc(c.name||c.url)}</b><div class="m">${esc(c.url)}</div>${c.videos} videos · ${esc(c.status)} ${c.error?`<div class="b">${esc(c.error)}</div>`:''}<br><button onclick="api('/api/channels/${c.id}/discover',{method:'POST'}).then(show)">Rediscover</button></div>`).join('')},
+async Videos(v){const vs=await api('/api/videos');v.innerHTML=`<button class="p" onclick="api('/api/videos/enqueue_current',{method:'POST'}).then(r=>{alert('Queued '+r.queued);show()})">Queue all relevant 2026+ videos</button>
+ <div class="c"><b>Upload authorized MP4</b><input id="ut" placeholder="Title"><input id="ud" type="date"><input id="uf" type="file" accept="video/mp4"><button onclick="up()">Upload &amp; analyze</button></div>`+
+ vs.map(x=>`<div class="c"><b>${esc(x.title)}</b><div class="m">${esc(x.channel||x.source)} · ${esc(x.published)} · ${esc(x.era)} · ${esc(x.relevance)}</div><div class="m">${esc(x.relevance_reason)}</div>
+ <b class="${x.status=='analyzed'?'g':x.status=='failed'?'b':''}">${esc(x.status)}</b>${x.frames_total?` <progress value="${x.frames_done}" max="${x.frames_total}"></progress> ${x.frames_done}/${x.frames_total} frames · pass2 ${x.pass2_done}/${x.pass2_total}`:''}${x.error?`<div class="b">${esc(x.error)}</div>`:''}
+ <br><button onclick="api('/api/videos/${x.id}/enqueue',{method:'POST'}).then(show)">${x.status=='failed'?'Retry':'Analyze'}</button></div>`).join('')},
+async Jobs(v){const j=await api('/api/jobs');v.innerHTML=j.map(x=>`<div class="c"><b>${esc(x.type)}</b> ${esc(x.title||x.ref_id)}<div>${esc(x.status)} · ${esc(x.stage||'')} · attempts ${x.attempts}</div>${x.error?`<div class="b">${esc(x.error)}</div>`:''}
+ ${['pause','resume','retry'].map(a=>`<button onclick="api('/api/jobs/${x.id}/${a}',{method:'POST'}).then(show)">${a}</button>`).join(' ')}</div>`).join('')||'No jobs'},
+async World(v){const q=window._q||'';const e=await api('/api/entities?q='+encodeURIComponent(q));v.innerHTML=`<input id="s" placeholder="Search buildings, weapons, items…" value="${esc(q)}" onchange="window._q=this.value;show()">`+
+ e.map(x=>`<div class="c" onclick="ent('${x.id}')"><b>${esc(x.name)}</b> <span class="m">${x.id}</span><div class="m">${esc(x.kind)} · ${esc(x.civilization||'unaffiliated')} · ${esc(x.dimension)} · conf ${(x.confidence||0).toFixed(2)} · ${esc(x.status)}</div><div id="d_${x.id}"></div></div>`).join('')||'<div class="c">No records yet.</div>'},
+async Missing(v){const q=await api('/api/questions');v.innerHTML=q.map(x=>`<div class="c">${esc(x.text)}<div class="m">${x.entity_id||''}</div></div>`).join('')||'<div class="c">No open questions.</div>'},
+async Share(v){const e=await api('/api/exports');v.innerHTML=`<button class="p" style="width:100%;font-size:18px" onclick="share()">SHARE WITH CHATGPT WORK</button><div id="r"></div><h3>Export history</h3>`+
+ e.map(x=>`<div class="c"><b>${x.version}</b> <span class="m">${new Date(x.created*1000).toLocaleString()}</span><div class="m">${esc(x.counts)}</div><a href="${x.manifest_url}">${x.manifest_url}</a></div>`).join('')}};
+async function addCh(){const urls=$('#u').value.split(/\s+/).filter(Boolean);const r=await api('/api/channels',{method:'POST',body:{urls}});const bad=r.filter(x=>x.error);if(bad.length)alert(bad.map(b=>b.url+': '+b.error).join('\n'));show()}
+async function up(){const f=new FormData();f.append('file',$('#uf').files[0]);f.append('title',$('#ut').value);f.append('published',$('#ud').value);await api('/api/uploads',{method:'POST',body:f});show()}
+async function ent(id){const d=$('#d_'+id);if(d.innerHTML){d.innerHTML='';return}const e=await api('/api/entities/'+id);
+ d.innerHTML=`<p>${esc(e.data.current_description||'')}</p><div class="m">Missing: ${esc(e.missing.join('; ')||'—')}</div>`+e.sources.map(s=>`<div class="m">${esc(s.era)} ${esc(s.published)} · <a href="${esc(s.url)}" target=_blank>${esc(s.title)} @${Math.round(s.t)}s</a><br>${esc(s.note)}</div><img loading=lazy src="" data-f="${s.frame_id}">`).join('');
+ d.querySelectorAll('img').forEach(async i=>{const r=await fetch('/api/frames/'+i.dataset.f+'.jpg',{headers:{Authorization:'Bearer '+tok}});if(r.ok)i.src=URL.createObjectURL(await r.blob())})}
+async function share(){const r=await api('/api/exports',{method:'POST',body:{note:'manual share'}});$('#r').innerHTML=`<div class="c g">Export ${r.version} created.<br><b>Paste into ChatGPT Work:</b><textarea rows="3" readonly onclick="this.select()">${r.manifest_url}</textarea><button onclick="navigator.clipboard.writeText('${r.manifest_url}')">Copy link</button>
+ <div class="m">Also: <a href="${r.index_url}">index</a> · <a href="${r.zip_url}">ZIP</a></div></div>`}
+show();
+</script></body></html>
